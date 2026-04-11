@@ -7,13 +7,17 @@ export const valkey = new Redis(config.valkeyUrl, {
   lazyConnect: true,
   maxRetriesPerRequest: 3,
 });
-valkey.on("error", () => {}); // Handled in connect()
+valkey.on("error", (err) => {
+  process.stderr.write(`postino valkey: ${err.message}\n`);
+});
 
 export const valkeySub = new Redis(config.valkeyUrl, {
   lazyConnect: true,
   maxRetriesPerRequest: 3,
 });
-valkeySub.on("error", () => {}); // Handled in connect()
+valkeySub.on("error", (err) => {
+  process.stderr.write(`postino valkeySub: ${err.message}\n`);
+});
 
 const prefix = config.keyPrefix;
 
@@ -71,34 +75,40 @@ export async function registerAgent(name: string): Promise<void> {
   }, HEARTBEAT_INTERVAL);
 }
 
+async function removeAgentIfEmpty(name: string): Promise<boolean> {
+  const inboxLen = await valkey.llen(keys.inbox(name));
+  if (inboxLen > 0) return false;
+  const pipe = valkey.pipeline();
+  pipe.srem(keys.agents(), name);
+  pipe.del(keys.broadcastCursor(name));
+  await pipe.exec();
+  return true;
+}
+
 export async function deregisterAgent(name: string): Promise<void> {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   await valkey.del(keys.agentInfo(name));
-
-  // Auto-cleanup: remove from agents set if inbox is empty
-  const inboxLen = await valkey.llen(keys.inbox(name));
-  if (inboxLen === 0) {
-    await valkey.srem(keys.agents(), name);
-    await valkey.del(keys.broadcastCursor(name));
-  }
-
+  await removeAgentIfEmpty(name);
   await publishEvent("agent_offline", { agent: name });
 }
 
 export async function cleanupStaleAgents(): Promise<string[]> {
   const allAgents = await valkey.smembers(keys.agents());
-  const removed: string[] = [];
+  if (allAgents.length === 0) return [];
 
+  // Batch check online status for all agents
+  const pipe = valkey.pipeline();
   for (const name of allAgents) {
-    const online = await valkey.exists(keys.agentInfo(name));
-    if (online) continue;
+    pipe.exists(keys.agentInfo(name));
+  }
+  const results = await pipe.exec();
 
-    const inboxLen = await valkey.llen(keys.inbox(name));
-    if (inboxLen === 0) {
-      await valkey.srem(keys.agents(), name);
-      await valkey.del(keys.broadcastCursor(name));
-      removed.push(name);
-    }
+  const removed: string[] = [];
+  for (let i = 0; i < allAgents.length; i++) {
+    const online = results?.[i]?.[1];
+    if (online) continue;
+    const wasRemoved = await removeAgentIfEmpty(allAgents[i]);
+    if (wasRemoved) removed.push(allAgents[i]);
   }
 
   return removed;
