@@ -1,5 +1,5 @@
 {
-  "name": "postino",
+  "name": "@manuelfedele/postino",
   "version": "0.1.0",
   "description": "Inter-agent messaging and broadcast system for Claude Code",
   "type": "module",

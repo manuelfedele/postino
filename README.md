@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/postino"><img src="https://img.shields.io/npm/v/postino?color=e63030" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/@manuelfedele/postino"><img src="https://img.shields.io/npm/v/@manuelfedele/postino?color=e63030" alt="npm"></a>
   <a href="https://github.com/manuelfedele/postino/actions"><img src="https://github.com/manuelfedele/postino/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License">
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node >= 18">
@@ -36,7 +36,7 @@
 ## Quick Start
 
 ```bash
-npx postino install
+npx @manuelfedele/postino install
 ```
 
 That's it. Restart Claude Code. Your agent is online.
@@ -58,13 +58,13 @@ claude mcp add postino -s user -- node $(pwd)/dist/index.js
 ### With a named agent
 
 ```bash
-claude mcp add postino -s user -e POSTINO_AGENT_NAME=researcher -- npx postino
+claude mcp add postino -s user -e POSTINO_AGENT_NAME=researcher -- npx @manuelfedele/postino
 ```
 
 ### Uninstall
 
 ```bash
-npx postino uninstall
+npx @manuelfedele/postino uninstall
 ```
 
 </details>
