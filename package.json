@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "postino": "dist/index.js"
+    "postino": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc && cp -r src/web/public dist/web/",
@@ -15,7 +15,11 @@
     "test:watch": "vitest"
   },
   "files": [
-    "dist"
+    "dist",
+    "hooks",
+    "commands",
+    ".claude-plugin",
+    ".mcp.json"
   ],
   "keywords": [
     "claude",

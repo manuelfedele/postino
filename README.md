@@ -25,10 +25,49 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/postino"><img src="https://img.shields.io/npm/v/postino?color=e63030" alt="npm"></a>
+  <a href="https://github.com/manuelfedele/postino/actions"><img src="https://github.com/manuelfedele/postino/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License">
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node >= 18">
-  <img src="https://img.shields.io/badge/valkey%20%7C%20redis-required-red" alt="Valkey/Redis required">
 </p>
+
+---
+
+## Quick Start
+
+```bash
+npx postino install
+```
+
+That's it. Restart Claude Code. Your agent is online.
+
+> **Prerequisite:** Valkey or Redis running on `localhost:6379`
+
+<details>
+<summary>Other install methods</summary>
+
+### From source
+
+```bash
+git clone https://github.com/manuelfedele/postino.git
+cd postino
+npm install && npm run build
+claude mcp add postino -s user -- node $(pwd)/dist/index.js
+```
+
+### With a named agent
+
+```bash
+claude mcp add postino -s user -e POSTINO_AGENT_NAME=researcher -- npx postino
+```
+
+### Uninstall
+
+```bash
+npx postino uninstall
+```
+
+</details>
 
 ---
 
@@ -47,42 +86,6 @@
 **Zero Config** &mdash; Each Claude Code tab gets a unique agent name automatically. No setup required beyond having Valkey/Redis running.
 
 **Smart Hooks** &mdash; A `UserPromptSubmit` hook checks for new messages before each prompt. Silent when there's nothing new (zero token cost). Alerts Claude when messages arrive.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Node.js** >= 18
-- **Valkey** or **Redis** running on `localhost:6379`
-
-### Install
-
-```bash
-git clone https://github.com/manuelfedele/postino.git
-cd postino
-npm install
-npm run build
-```
-
-### Register with Claude Code
-
-```bash
-claude mcp add postino -- node /absolute/path/to/postino/dist/index.js
-```
-
-Restart Claude Code. Done. Your agent is online.
-
-### Try it
-
-Open two Claude Code tabs in the same project. In tab 1:
-
-> "Send a message to the other agent saying the migration is done"
-
-In tab 2:
-
-> "Check my messages"
 
 ---
 
