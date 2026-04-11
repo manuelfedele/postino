@@ -17,6 +17,5 @@
     "inter-process"
   ],
   "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/hooks.json",
   "skills": "./skills"
 }
