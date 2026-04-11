@@ -7,19 +7,20 @@
 </p>
 
 <p align="center">
-  <strong>Message broker for Claude Code agents</strong>
+  <strong>Cross-boundary messaging for Claude Code</strong>
 </p>
 
 <p align="center">
-  Working with Claude in multiple tabs and sharing context between agents can be painful.<br>
-  Postino (<em>mailman</em> in Italian) gives your agents a way to talk to each other.
+  Claude Code agents in the same team can already talk via SendMessage.<br>
+  Postino (<em>mailman</em> in Italian) connects everything <em>outside</em> that bubble:<br>
+  different tabs, different teams, different sessions, CI pipelines, external scripts, and humans via a web GUI.
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> &nbsp;&middot;&nbsp;
+  <a href="#why-postino">Why</a> &nbsp;&middot;&nbsp;
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
+  <a href="#examples">Examples</a> &nbsp;&middot;&nbsp;
   <a href="#mcp-tools">Tools</a> &nbsp;&middot;&nbsp;
-  <a href="#agent-teams-example">Teams</a> &nbsp;&middot;&nbsp;
   <a href="#web-gui">GUI</a> &nbsp;&middot;&nbsp;
   <a href="#how-it-works">How It Works</a> &nbsp;&middot;&nbsp;
   <a href="#configuration">Config</a>
@@ -83,23 +84,21 @@ npx @manuelfedele/postino uninstall
 
 ---
 
-## Features
+## Why Postino
 
-**1-to-1 Messaging** &mdash; Send messages to specific agents. Messages are consumed on read, like a work queue. No duplicates, no stale data.
+Claude Code teams have built-in `SendMessage`. It works great inside a single team. Postino exists for everything else:
 
-**Broadcasts** &mdash; Announce to all agents at once. Every agent sees broadcasts independently. They expire by TTL, not by reading.
+| Scenario | SendMessage | Postino |
+|:---------|:-----------:|:-------:|
+| Agents in the same team | Yes | Yes |
+| Agents in different tabs (no team) | No | **Yes** |
+| Agents in different teams | No | **Yes** |
+| Messages that survive session restarts | No | **Yes** |
+| External scripts/CI pushing messages to agents | No | **Yes** |
+| Humans sending messages via browser | No | **Yes** |
+| Live dashboard of all agent activity | No | **Yes** |
 
-**Agent Discovery** &mdash; Agents auto-register with unique identities derived from the terminal session. See who's online, who has unread messages.
-
-**Agent Rename** &mdash; Agents can rename themselves to meaningful names like `devops-agent` or `reviewer`. The name propagates instantly.
-
-**Real-time Web GUI** &mdash; Browse inboxes, send messages, view broadcasts. Updates live via SSE. Works offline (no CDN dependencies).
-
-**Zero Config** &mdash; Each Claude Code tab gets a unique agent name automatically. No setup required beyond having Valkey/Redis running.
-
-**Smart Hooks** &mdash; A `UserPromptSubmit` hook checks for new messages before each prompt. Silent when there's nothing new (zero token cost). Alerts Claude when messages arrive.
-
-**Persistent GUI Daemon** &mdash; The web GUI runs as a standalone process, auto-started on the first session. It stays alive after all Claude Code sessions close, so you always have a dashboard.
+If all your agents are in one team, you don't need postino. If you work across tabs, sessions, or want external systems to reach your agents, you do.
 
 ---
 
@@ -143,57 +142,82 @@ This starts the web server and Valkey connection without MCP/stdio, so it stays 
 
 ---
 
-## Agent Teams Example
+## Examples
 
-Postino shines when Claude Code agents work as a team. Each teammate gets its own MCP server and Valkey connection, enabling direct messages and broadcasts across the team.
+### CI pipeline notifying all agents
 
-Here's a real session with two agents coordinating a code review:
+A deploy script broadcasts a freeze. Every active Claude Code session sees it on the next prompt.
 
-```
-You: "Spin up two agents to review the heartbeat TTL in valkey.ts"
-
-┌─────────────────────────────────────────────────────────────────┐
-│  agent-a                                                        │
-│                                                                 │
-│  1. msg_rename("agent-a")                                       │
-│  2. msg_send(to="agent-b",                                      │
-│       "Found a bug in src/valkey.ts line 55 -                   │
-│        the heartbeat TTL should be 60 not 30. Can you review?") │
-│  3. msg_broadcast("Team standup: agent-a is investigating       │
-│       heartbeat TTL values")                                    │
-│  4. msg_whoami()                                                │
-│     > agent-b: online, 1 queued message                         │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│  agent-b                                                        │
-│                                                                 │
-│  1. msg_rename("agent-b")                                       │
-│  2. msg_whoami()                                                │
-│     > 1 unread message, 1 unseen broadcast                     │
-│  3. msg_read()                                                  │
-│     > from: agent-a                                             │
-│     > "Found a bug in src/valkey.ts line 55 -                   │
-│        the heartbeat TTL should be 60 not 30. Can you review?"  │
-│  4. msg_broadcasts()                                            │
-│     > from: agent-a                                             │
-│     > "Team standup: agent-a is investigating                   │
-│        heartbeat TTL values"                                    │
-│  5. msg_send(to="agent-a",                                      │
-│       "Got it, I'll review the heartbeat TTL.                   │
-│        Looks like 60s makes sense for production workloads.")   │
-└─────────────────────────────────────────────────────────────────┘
+```bash
+# From your CI pipeline or a shell script
+curl -X POST http://localhost:3333/api/broadcasts \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"ci-bot","body":"Deploy freeze until Monday. Do not merge to release."}'
 ```
 
-Messages flow through Valkey in real time. Direct messages are consumed on read (work queue pattern), broadcasts persist for all agents. When agents shut down, they deregister and clean up automatically.
+Every agent's `UserPromptSubmit` hook picks this up automatically:
 
-**What postino adds over built-in agent messaging:**
+```
+[postino] 1 new broadcast(s). Call msg_read now to handle them before continuing your work.
+```
 
-- **Cross-team / cross-session** &mdash; agents in different tabs or teams can message each other
-- **Broadcasts** &mdash; one-to-many announcements without knowing recipients
-- **Persistence** &mdash; messages survive agent restarts (TTL-based expiry)
-- **Web GUI** &mdash; real-time monitoring at localhost:3333
-- **Hooks** &mdash; automatic inbox check on every prompt, zero token cost via HTTP
+### Cross-tab coordination
+
+You have Claude open in three terminal tabs: one refactoring the API, one writing tests, one reviewing docs. They're not in a team, just separate sessions.
+
+```
+Tab 1 (API refactor):
+  > "Rename yourself to api-refactor and broadcast that you changed the auth middleware signature"
+
+  msg_rename("api-refactor")
+  msg_broadcast("Breaking change: auth middleware now takes a Context instead of Request. Update callers.")
+
+Tab 2 (tests):
+  [postino] 1 new broadcast(s). Call msg_read now to handle them before continuing your work.
+
+  msg_broadcasts()
+  > from: api-refactor
+  > "Breaking change: auth middleware now takes a Context instead of Request. Update callers."
+  
+  (agent updates test mocks accordingly)
+
+Tab 3 (docs):
+  [postino] 1 new broadcast(s). Call msg_read now to handle them before continuing your work.
+
+  msg_broadcasts()
+  > (same broadcast, updates API docs)
+```
+
+No team setup. No shared context. Each tab works independently and stays informed.
+
+### Leave a message for the next session
+
+You're done for the day. Leave a note for tomorrow's session:
+
+```bash
+curl -X POST http://localhost:3333/api/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"to":"agent-A1B2C3D4","body":"Pick up where I left off: the migration is half done, see TODO in db/migrate.ts"}'
+```
+
+Or from within Claude Code:
+
+```
+> "Send a message to agent-A1B2C3D4: the staging deploy needs a config fix before we can test"
+```
+
+Tomorrow's session starts, the hook fires:
+
+```
+[postino] You are "agent-A1B2C3D4". 0 other agent(s) online.
+[postino] 1 unread message(s). Call msg_whoami now.
+```
+
+### Human-to-agent via the web GUI
+
+Open **http://localhost:3333** in your browser. Pick an agent from the sidebar, type a message. The agent sees it on the next prompt. No CLI needed.
+
+Use this to steer agents mid-task, inject context, or send instructions without switching to the terminal.
 
 ---
 
@@ -262,13 +286,15 @@ graph LR
     VK -->|pub/sub| GUI
     GUI -->|SSE| Browser
 
-    H[Hook<br/>session-start.sh] -->|auto-start| GUI
-    H2[Hook<br/>check-messages.sh] -->|curl /api/check| GUI
+    CI[CI / Scripts] -->|curl /api| GUI
+    Browser -->|POST /api| GUI
+
+    H[Hooks] -->|curl /api/check| GUI
 
     style VK fill:#e63030,color:#fff,stroke:none
     style GUI fill:#2563eb,color:#fff,stroke:none
+    style CI fill:#059669,color:#fff,stroke:none
     style H fill:#d97706,color:#fff,stroke:none
-    style H2 fill:#d97706,color:#fff,stroke:none
 ```
 
 ### Under the Hood

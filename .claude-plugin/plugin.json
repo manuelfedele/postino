@@ -1,6 +1,6 @@
 {
   "name": "postino",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Inter-agent messaging and broadcast system for Claude Code. Send 1-to-1 messages between tabs, broadcast to all agents, with a real-time web GUI.",
   "author": {
     "name": "Manuel Fedele"
