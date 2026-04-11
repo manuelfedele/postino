@@ -1,0 +1,17 @@
+{
+  "description": "Check for postino messages on each user prompt",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/check-messages.sh",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

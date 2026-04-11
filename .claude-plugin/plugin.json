@@ -1,0 +1,21 @@
+{
+  "name": "postino",
+  "version": "0.1.0",
+  "description": "Inter-agent messaging and broadcast system for Claude Code. Send 1-to-1 messages between tabs, broadcast to all agents, with a real-time web GUI.",
+  "author": {
+    "name": "Manuel Fedele"
+  },
+  "repository": "https://github.com/manuelfedele/postino",
+  "license": "MIT",
+  "keywords": [
+    "messaging",
+    "broadcast",
+    "multi-agent",
+    "valkey",
+    "redis",
+    "mcp",
+    "inter-process"
+  ],
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}
