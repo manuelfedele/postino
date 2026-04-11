@@ -19,6 +19,7 @@
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
   <a href="#mcp-tools">Tools</a> &nbsp;&middot;&nbsp;
+  <a href="#agent-teams-example">Teams</a> &nbsp;&middot;&nbsp;
   <a href="#web-gui">GUI</a> &nbsp;&middot;&nbsp;
   <a href="#how-it-works">How It Works</a> &nbsp;&middot;&nbsp;
   <a href="#configuration">Config</a>
@@ -128,6 +129,60 @@ Open **http://localhost:3333** in your browser.
 | **Broadcasts** | Shared announcement feed, broadcast compose |
 
 Updates in real-time via Server-Sent Events. When an agent sends a message from the CLI, the GUI reflects it instantly.
+
+---
+
+## Agent Teams Example
+
+Postino shines when Claude Code agents work as a team. Each teammate gets its own MCP server and Valkey connection, enabling direct messages and broadcasts across the team.
+
+Here's a real session with two agents coordinating a code review:
+
+```
+You: "Spin up two agents to review the heartbeat TTL in valkey.ts"
+
+┌─────────────────────────────────────────────────────────────────┐
+│  agent-a                                                        │
+│                                                                 │
+│  1. msg_rename("agent-a")                                       │
+│  2. msg_send(to="agent-b",                                      │
+│       "Found a bug in src/valkey.ts line 55 -                   │
+│        the heartbeat TTL should be 60 not 30. Can you review?") │
+│  3. msg_broadcast("Team standup: agent-a is investigating       │
+│       heartbeat TTL values")                                    │
+│  4. msg_whoami()                                                │
+│     > agent-b: online, 1 queued message                         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  agent-b                                                        │
+│                                                                 │
+│  1. msg_rename("agent-b")                                       │
+│  2. msg_whoami()                                                │
+│     > 1 unread message, 1 unseen broadcast                     │
+│  3. msg_read()                                                  │
+│     > from: agent-a                                             │
+│     > "Found a bug in src/valkey.ts line 55 -                   │
+│        the heartbeat TTL should be 60 not 30. Can you review?"  │
+│  4. msg_broadcasts()                                            │
+│     > from: agent-a                                             │
+│     > "Team standup: agent-a is investigating                   │
+│        heartbeat TTL values"                                    │
+│  5. msg_send(to="agent-a",                                      │
+│       "Got it, I'll review the heartbeat TTL.                   │
+│        Looks like 60s makes sense for production workloads.")   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Messages flow through Valkey in real time. Direct messages are consumed on read (work queue pattern), broadcasts persist for all agents. When agents shut down, they deregister and clean up automatically.
+
+**What postino adds over built-in agent messaging:**
+
+- **Cross-team / cross-session** &mdash; agents in different tabs or teams can message each other
+- **Broadcasts** &mdash; one-to-many announcements without knowing recipients
+- **Persistence** &mdash; messages survive agent restarts (TTL-based expiry)
+- **Web GUI** &mdash; real-time monitoring at localhost:3333
+- **Hooks** &mdash; automatic inbox check on every prompt, zero token cost via HTTP
 
 ---
 

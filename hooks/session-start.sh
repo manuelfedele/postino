@@ -1,8 +1,16 @@
 #!/bin/bash
-# Postino: session start - show agent identity and unread messages
+# Postino: session start - ensure GUI daemon is running, show agent status
 # Fires once per session to orient the agent
 
 PORT="${POSTINO_WEB_PORT:-3333}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# Auto-start the GUI daemon if it's not already running
+if ! curl -s --connect-timeout 1 --max-time 1 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
+  nohup node "${PLUGIN_ROOT}/dist/cli.js" serve >/dev/null 2>&1 &
+  # Brief wait for startup
+  sleep 1
+fi
 
 # Resolve agent name (same logic as src/types.ts)
 if [ -n "$POSTINO_AGENT_NAME" ]; then

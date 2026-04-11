@@ -74,6 +74,28 @@ function uninstall(): void {
   }
 }
 
+async function serve(): Promise<void> {
+  const { connect } = await import("./valkey.js");
+  const { startWebServer } = await import("./web/server.js");
+  const { loadConfig } = await import("./types.js");
+
+  const config = loadConfig();
+
+  try {
+    await connect();
+  } catch {
+    console.error(`\n  postino: cannot connect to Valkey/Redis at ${config.valkeyUrl}\n`);
+    process.exit(1);
+  }
+
+  startWebServer(config.webPort);
+  console.log(`\n  postino GUI running standalone (no MCP)\n`);
+
+  // Keep the process alive
+  process.on("SIGINT", () => process.exit(0));
+  process.on("SIGTERM", () => process.exit(0));
+}
+
 function printHelp(): void {
   console.log(`
   postino - message broker for Claude Code agents
@@ -81,6 +103,7 @@ function printHelp(): void {
   Usage:
     npx postino install       Register postino with Claude Code
     npx postino uninstall     Remove postino from Claude Code
+    npx postino serve         Run the web GUI standalone (no MCP)
 
   After installing, restart Claude Code. Your agents will have
   access to messaging, broadcasts, and a web GUI.
@@ -95,6 +118,9 @@ switch (command) {
     break;
   case "uninstall":
     uninstall();
+    break;
+  case "serve":
+    serve();
     break;
   case "help":
   case "--help":
