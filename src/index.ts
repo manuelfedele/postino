@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./types.js";
-import { connect, disconnect, valkey, valkeySub, keys, registerAgent, deregisterAgent } from "./valkey.js";
+import { connect, disconnect, valkey, valkeySub, keys, registerAgent, deregisterAgent, getOnlineAgents } from "./valkey.js";
 import { registerMessagingTools } from "./tools/messaging.js";
 import { startWebServer, getGuiState, restartOnPort } from "./web/server.js";
+import type { Message } from "./types.js";
 
 const config = loadConfig();
 
@@ -17,11 +18,106 @@ const server = new McpServer(
   {
     capabilities: {
       tools: {},
+      resources: {},
+      prompts: {},
+      logging: {},
     },
   }
 );
 
 registerMessagingTools(server, config.agentName);
+
+// --- MCP Resources ---
+
+async function getFormattedAgents() {
+  const allAgents = await valkey.smembers(keys.agents());
+  const onlineSet = new Set(await getOnlineAgents());
+  const result = [];
+  for (const name of allAgents.sort()) {
+    const msgCount = await valkey.llen(keys.inbox(name));
+    result.push({ name, online: onlineSet.has(name), messages: msgCount });
+  }
+  return result;
+}
+
+async function getInboxMessages(agent: string) {
+  const raw = await valkey.lrange(keys.inbox(agent), 0, -1);
+  return raw.map((r: string) => JSON.parse(r) as Message);
+}
+
+server.registerResource("agents", "postino://agents", {
+  description: "List of all registered postino agents with online status",
+  mimeType: "application/json",
+}, async () => ({
+  contents: [{
+    uri: "postino://agents",
+    mimeType: "application/json",
+    text: JSON.stringify(await getFormattedAgents()),
+  }],
+}));
+
+server.registerResource(
+  "inbox",
+  new ResourceTemplate("postino://inbox/{agent}", {
+    list: async () => {
+      const agents = await valkey.smembers(keys.agents());
+      return {
+        resources: agents.sort().map(name => ({
+          uri: `postino://inbox/${name}`,
+          name: `${name}'s inbox`,
+          mimeType: "application/json",
+        })),
+      };
+    },
+    complete: {
+      agent: async (value) => {
+        const agents = await valkey.smembers(keys.agents());
+        return agents.filter(a => a.startsWith(value)).sort();
+      },
+    },
+  }),
+  {
+    description: "Messages in an agent's inbox",
+    mimeType: "application/json",
+  },
+  async (uri, { agent }) => ({
+    contents: [{
+      uri: uri.href,
+      mimeType: "application/json",
+      text: JSON.stringify(await getInboxMessages(agent as string)),
+    }],
+  })
+);
+
+// --- MCP Prompts ---
+
+server.registerPrompt("check-messages", {
+  description: "Check your postino inbox for new messages and broadcasts",
+}, async () => ({
+  messages: [{
+    role: "user" as const,
+    content: {
+      type: "text" as const,
+      text: "Check my postino inbox for new messages and broadcasts. Use msg_whoami to get a full status overview.",
+    },
+  }],
+}));
+
+server.registerPrompt("send-message", {
+  description: "Send a message to another postino agent",
+  argsSchema: {
+    to: { type: "string", description: "Target agent name" },
+    body: { type: "string", description: "Message content" },
+  } as any,
+}, async (args: any) => ({
+  messages: [{
+    role: "user" as const,
+    content: {
+      type: "text" as const,
+      text: `Send a message to "${args.to}" with the following content: ${args.body}`,
+    },
+  }],
+}));
 
 function subscribeGuiTakeover(): void {
   const channel = keys.guiTakeoverChannel();

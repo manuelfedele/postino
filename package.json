@@ -1,6 +1,6 @@
 {
   "name": "@manuelfedele/postino",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Inter-agent messaging and broadcast system for Claude Code",
   "type": "module",
   "main": "dist/index.js",

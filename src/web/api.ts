@@ -1,10 +1,11 @@
+import { z } from "zod";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { valkey, valkeySub, keys, publishEvent, getOnlineAgents } from "../valkey.js";
-import { loadConfig } from "../types.js";
+import { loadConfig, AGENT_NAME, MSG_BODY } from "../types.js";
 import type { Message, Broadcast } from "../types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,18 @@ function readVersion(): string {
 const VERSION = readVersion();
 
 const config = loadConfig();
+const startTime = Date.now();
+
+const PostMessageSchema = z.object({
+  to: AGENT_NAME,
+  from: AGENT_NAME.optional(),
+  body: MSG_BODY,
+});
+
+const PostBroadcastSchema = z.object({
+  from: AGENT_NAME.optional(),
+  body: MSG_BODY,
+});
 
 export const api = new Hono();
 
@@ -49,17 +62,26 @@ api.get("/messages/:inbox", async (c) => {
 });
 
 api.post("/messages", async (c) => {
-  const body = await c.req.json<{ to: string; from?: string; body: string }>();
+  const raw = await c.req.json();
+  const parsed = PostMessageSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ ok: false, error: parsed.error.flatten().fieldErrors }, 400);
+  }
   const msg: Message = {
     id: crypto.randomUUID(),
-    from: body.from || "web-ui",
-    to: body.to,
-    body: body.body,
+    from: parsed.data.from || "web-ui",
+    to: parsed.data.to,
+    body: parsed.data.body,
     timestamp: new Date().toISOString(),
   };
 
   await valkey.rpush(keys.inbox(msg.to), JSON.stringify(msg));
   await valkey.expire(keys.inbox(msg.to), config.msgTtl);
+  // Enforce inbox size limit
+  const inboxLen = await valkey.llen(keys.inbox(msg.to));
+  if (inboxLen > config.maxInbox) {
+    await valkey.ltrim(keys.inbox(msg.to), inboxLen - config.maxInbox, -1);
+  }
   await valkey.sadd(keys.agents(), msg.to);
   if (msg.from !== "anonymous") {
     await valkey.sadd(keys.agents(), msg.from);
@@ -81,22 +103,47 @@ api.delete("/messages/:inbox", async (c) => {
 // --- Broadcasts ---
 
 api.get("/broadcasts", async (c) => {
-  const all = await valkey.lrange(keys.broadcasts(), 0, -1);
-  const broadcasts: Broadcast[] = all.map((r: string) => JSON.parse(r));
+  const raw = await valkey.lrange(keys.broadcasts(), 0, -1);
+  const allBroadcasts: Broadcast[] = raw.map((r: string) => JSON.parse(r));
+
+  // Per-broadcast TTL: clean expired from head (chronologically ordered)
+  const now = Date.now();
+  const cutoff = now - config.msgTtl * 1000;
+  let expiredFromHead = 0;
+  for (const bc of allBroadcasts) {
+    if (new Date(bc.timestamp).getTime() <= cutoff) {
+      expiredFromHead++;
+    } else {
+      break;
+    }
+  }
+  if (expiredFromHead > 0) {
+    await valkey.ltrim(keys.broadcasts(), expiredFromHead, -1);
+  }
+
+  const broadcasts = allBroadcasts.slice(expiredFromHead);
   return c.json(broadcasts);
 });
 
 api.post("/broadcasts", async (c) => {
-  const body = await c.req.json<{ from?: string; body: string }>();
+  const raw = await c.req.json();
+  const parsed = PostBroadcastSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ ok: false, error: parsed.error.flatten().fieldErrors }, 400);
+  }
   const bc: Broadcast = {
     id: crypto.randomUUID(),
-    from: body.from || "web-ui",
-    body: body.body,
+    from: parsed.data.from || "web-ui",
+    body: parsed.data.body,
     timestamp: new Date().toISOString(),
   };
 
   await valkey.rpush(keys.broadcasts(), JSON.stringify(bc));
-  await valkey.expire(keys.broadcasts(), config.msgTtl);
+  // Enforce broadcast list size limit
+  const bcLen = await valkey.llen(keys.broadcasts());
+  if (bcLen > config.maxBroadcasts) {
+    await valkey.ltrim(keys.broadcasts(), bcLen - config.maxBroadcasts, -1);
+  }
   await publishEvent("broadcast", { from: bc.from, messageId: bc.id });
 
   return c.json({ ok: true, id: bc.id });
@@ -134,6 +181,22 @@ api.get("/check/:agent", async (c) => {
   const unseenBc = Math.max(0, allBc.length - cursor);
 
   return c.json({ agent, unreadMessages: unread, unseenBroadcasts: unseenBc });
+});
+
+// --- Health Check ---
+
+api.get("/health", async (c) => {
+  let valkeyOk = false;
+  try {
+    await valkey.ping();
+    valkeyOk = true;
+  } catch {}
+  return c.json({
+    ok: valkeyOk,
+    valkey: valkeyOk,
+    uptime: Math.floor((Date.now() - startTime) / 1000),
+    version: VERSION,
+  });
 });
 
 // --- SSE Events ---

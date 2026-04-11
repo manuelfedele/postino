@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import { valkey, keys, publishEvent, getOnlineAgents, renameAgent, cleanupStaleAgents } from "../valkey.js";
-import { loadConfig } from "../types.js";
+import { loadConfig, AGENT_NAME, MSG_BODY } from "../types.js";
 import type { Message, Broadcast } from "../types.js";
 
 const config = loadConfig();
@@ -68,7 +69,7 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       "Other agents will see your new name immediately.",
     ].join(" "),
     inputSchema: {
-      name: z.string().describe("New agent name (e.g. 'devops-agent', 'code-reviewer')"),
+      name: AGENT_NAME.describe("New agent name (e.g. 'devops-agent', 'code-reviewer')"),
     },
   }, async ({ name }) => {
     const oldName = identity.name;
@@ -89,6 +90,12 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
 
     await renameAgent(oldName, name);
     identity.name = name;
+
+    server.sendLoggingMessage({
+      level: "info",
+      logger: "postino",
+      data: { event: "agent_renamed", from: oldName, to: name },
+    }).catch(() => {});
 
     return {
       content: [{ type: "text" as const, text: `Renamed from "${oldName}" to "${name}"` }],
@@ -168,8 +175,14 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       "For announcements to ALL agents, use msg_broadcast instead.",
     ].join(" "),
     inputSchema: {
-      to: z.string().describe("Target agent name. Use msg_list_agents to see available agents."),
-      body: z.string().describe("Message body"),
+      to: completable(
+        AGENT_NAME.describe("Target agent name. Use msg_list_agents to see available agents."),
+        async (partial) => {
+          const agents = await valkey.smembers(keys.agents());
+          return agents.filter(a => a.startsWith(partial.toString())).sort();
+        }
+      ),
+      body: MSG_BODY.describe("Message body"),
     },
   }, async ({ to, body }) => {
     const msg: Message = {
@@ -182,11 +195,22 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
 
     await valkey.rpush(keys.inbox(to), JSON.stringify(msg));
     await valkey.expire(keys.inbox(to), config.msgTtl);
+    // Enforce inbox size limit: keep only the newest messages
+    const inboxLen = await valkey.llen(keys.inbox(to));
+    if (inboxLen > config.maxInbox) {
+      await valkey.ltrim(keys.inbox(to), inboxLen - config.maxInbox, -1);
+    }
     await valkey.sadd(keys.agents(), to);
     await valkey.sadd(keys.agents(), identity.name);
 
     await valkey.publish(keys.notifyChannel(to), JSON.stringify(msg));
     await publishEvent("msg_send", { from: identity.name, to, messageId: msg.id });
+
+    server.sendLoggingMessage({
+      level: "info",
+      logger: "postino",
+      data: { event: "message_sent", from: identity.name, to, messageId: msg.id },
+    }).catch(() => {});
 
     return {
       content: [{ type: "text" as const, text: `Message sent to "${to}" (id: ${msg.id})` }],
@@ -201,13 +225,19 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       "Call this when msg_whoami or msg_check reports unread messages.",
     ].join(" "),
     inputSchema: {
-      inbox: z.string().optional().describe("Inbox to read. Defaults to this agent's own inbox."),
+      inbox: AGENT_NAME.optional().describe("Inbox to read. Defaults to this agent's own inbox."),
       limit: z.number().optional().default(20).describe("Maximum messages to read"),
     },
   }, async ({ inbox, limit }) => {
     const target = inbox ?? identity.name;
     const maxMessages = limit ?? 20;
-    const raw = await valkey.lrange(keys.inbox(target), 0, maxMessages - 1);
+
+    // Atomic read-and-consume with MULTI/EXEC
+    const multi = valkey.multi();
+    multi.lrange(keys.inbox(target), 0, maxMessages - 1);
+    multi.ltrim(keys.inbox(target), maxMessages, -1);
+    const results = await multi.exec();
+    const raw = results?.[0]?.[1] as string[] ?? [];
 
     if (raw.length === 0) {
       return {
@@ -216,12 +246,15 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
     }
 
     const messages: Message[] = raw.map((r: string) => JSON.parse(r));
-
-    // Always consume: remove the messages we just read
-    await valkey.ltrim(keys.inbox(target), raw.length, -1);
     await publishEvent("msg_read", { inbox: target, count: raw.length });
 
     await valkey.sadd(keys.agents(), target);
+
+    server.sendLoggingMessage({
+      level: "info",
+      logger: "postino",
+      data: { event: "messages_read", inbox: target, count: raw.length },
+    }).catch(() => {});
 
     return {
       content: [{
@@ -240,7 +273,7 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       "Use this for announcements: deploy freezes, CI status, completed migrations.",
     ].join(" "),
     inputSchema: {
-      body: z.string().describe("Broadcast message body"),
+      body: MSG_BODY.describe("Broadcast message body"),
     },
   }, async ({ body }) => {
     const bc: Broadcast = {
@@ -251,9 +284,19 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
     };
 
     await valkey.rpush(keys.broadcasts(), JSON.stringify(bc));
-    await valkey.expire(keys.broadcasts(), config.msgTtl);
+    // Enforce broadcast list size limit: keep only the newest entries
+    const bcLen = await valkey.llen(keys.broadcasts());
+    if (bcLen > config.maxBroadcasts) {
+      await valkey.ltrim(keys.broadcasts(), bcLen - config.maxBroadcasts, -1);
+    }
 
     await publishEvent("broadcast", { from: identity.name, messageId: bc.id });
+
+    server.sendLoggingMessage({
+      level: "info",
+      logger: "postino",
+      data: { event: "broadcast_sent", from: identity.name, messageId: bc.id },
+    }).catch(() => {});
 
     return {
       content: [{ type: "text" as const, text: `Broadcast sent (id: ${bc.id})` }],
@@ -279,10 +322,40 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       };
     }
 
-    const broadcasts: Broadcast[] = raw.map((r: string) => JSON.parse(r));
+    const allBroadcasts: Broadcast[] = raw.map((r: string) => JSON.parse(r));
+
+    // Per-broadcast TTL: filter out expired entries
+    const now = Date.now();
+    const cutoff = now - config.msgTtl * 1000;
+
+    // Clean expired from head of list (chronologically ordered)
+    let expiredFromHead = 0;
+    for (const bc of allBroadcasts) {
+      if (new Date(bc.timestamp).getTime() <= cutoff) {
+        expiredFromHead++;
+      } else {
+        break;
+      }
+    }
+    if (expiredFromHead > 0) {
+      await valkey.ltrim(keys.broadcasts(), expiredFromHead, -1);
+    }
+
+    const broadcasts = allBroadcasts.slice(expiredFromHead);
+
+    if (broadcasts.length === 0) {
+      return {
+        content: [{ type: "text" as const, text: "No broadcasts" }],
+      };
+    }
+
+    // Adjust cursor for trimmed entries
+    const cursorStr = await valkey.get(keys.broadcastCursor(identity.name));
+    const rawCursor = cursorStr ? parseInt(cursorStr, 10) : 0;
+    const cursor = Math.max(0, rawCursor - expiredFromHead);
 
     if (showAll) {
-      await valkey.set(keys.broadcastCursor(identity.name), String(raw.length), "EX", config.msgTtl);
+      await valkey.set(keys.broadcastCursor(identity.name), String(broadcasts.length), "EX", config.msgTtl);
       return {
         content: [{
           type: "text" as const,
@@ -291,12 +364,10 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       };
     }
 
-    const cursorStr = await valkey.get(keys.broadcastCursor(identity.name));
-    const cursor = cursorStr ? parseInt(cursorStr, 10) : 0;
     const unseen = broadcasts.slice(cursor);
 
-    // Update cursor
-    await valkey.set(keys.broadcastCursor(identity.name), String(raw.length), "EX", config.msgTtl);
+    // Update cursor relative to the (potentially trimmed) list
+    await valkey.set(keys.broadcastCursor(identity.name), String(broadcasts.length), "EX", config.msgTtl);
 
     if (unseen.length === 0) {
       return {

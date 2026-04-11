@@ -1,3 +1,11 @@
+import { z } from "zod";
+
+export const AGENT_NAME = z.string().min(1).max(64).regex(
+  /^[a-zA-Z0-9][a-zA-Z0-9\-_.]*$/,
+  "Agent name must be alphanumeric with hyphens, dots, or underscores",
+);
+export const MSG_BODY = z.string().min(1).max(32768);
+
 export interface Message {
   id: string;
   from: string;
@@ -20,6 +28,8 @@ export interface Config {
   keyPrefix: string;
   agentName: string;
   msgTtl: number;
+  maxInbox: number;
+  maxBroadcasts: number;
 }
 
 function resolveAgentName(): string {
@@ -42,5 +52,7 @@ export function loadConfig(): Config {
     keyPrefix: process.env.POSTINO_KEY_PREFIX ?? "po:",
     agentName: resolveAgentName(),
     msgTtl: parseInt(process.env.POSTINO_MSG_TTL ?? "86400", 10),
+    maxInbox: parseInt(process.env.POSTINO_MAX_INBOX ?? "1000", 10),
+    maxBroadcasts: parseInt(process.env.POSTINO_MAX_BROADCASTS ?? "500", 10),
   };
 }
