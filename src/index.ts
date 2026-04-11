@@ -24,7 +24,21 @@ const server = new McpServer(
 registerMessagingTools(server, config.agentName);
 
 async function main(): Promise<void> {
-  await connect();
+  try {
+    await connect();
+  } catch (err) {
+    const url = config.valkeyUrl;
+    process.stderr.write(`\n  postino: cannot connect to Valkey/Redis at ${url}\n\n`);
+    process.stderr.write(`  Postino requires Valkey or Redis. Start one with:\n\n`);
+    process.stderr.write(`    docker run -d --name valkey -p 6379:6379 valkey/valkey:8\n\n`);
+    process.stderr.write(`  Or install natively:\n\n`);
+    process.stderr.write(`    macOS:  brew install valkey && brew services start valkey\n`);
+    process.stderr.write(`    Linux:  apt install valkey-server\n\n`);
+    process.stderr.write(`  To use a different host/port:\n\n`);
+    process.stderr.write(`    POSTINO_VALKEY_URL=redis://host:port\n\n`);
+    process.exit(1);
+  }
+
   await registerAgent(config.agentName);
 
   const transport = new StdioServerTransport();
@@ -47,6 +61,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("Failed to start postino:", err);
+  process.stderr.write(`postino: ${err.message || err}\n`);
   process.exit(1);
 });

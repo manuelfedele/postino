@@ -7,11 +7,13 @@ export const valkey = new Redis(config.valkeyUrl, {
   lazyConnect: true,
   maxRetriesPerRequest: 3,
 });
+valkey.on("error", () => {}); // Handled in connect()
 
 export const valkeySub = new Redis(config.valkeyUrl, {
   lazyConnect: true,
   maxRetriesPerRequest: 3,
 });
+valkeySub.on("error", () => {}); // Handled in connect()
 
 const prefix = config.keyPrefix;
 
@@ -27,6 +29,8 @@ export const keys = {
 
 export async function connect(): Promise<void> {
   await valkey.connect();
+  // Verify the connection actually works
+  await valkey.ping();
   await valkeySub.connect();
 }
 
