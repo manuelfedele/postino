@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { api } from "./api.js";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -57,9 +58,23 @@ app.get("/", (c) => {
 
 const MAX_PORT_ATTEMPTS = 10;
 
+export interface GuiState {
+  running: boolean;
+  port: number | null;
+}
+
+let currentServer: ServerType | null = null;
+let currentPort: number | null = null;
+
+export function getGuiState(): GuiState {
+  return { running: currentServer !== null, port: currentPort };
+}
+
 export function startWebServer(port: number, attempt = 0): void {
   try {
     const server = serve({ fetch: app.fetch, port }, () => {
+      currentServer = server;
+      currentPort = port;
       process.stderr.write(`postino GUI: http://localhost:${port}\n`);
     });
     server.on("error", (err: NodeJS.ErrnoException) => {
@@ -74,4 +89,46 @@ export function startWebServer(port: number, attempt = 0): void {
   } catch (err) {
     process.stderr.write(`postino GUI failed to start: ${err}\n`);
   }
+}
+
+export function restartOnPort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const oldServer = currentServer;
+    const oldPort = currentPort;
+
+    const launchNew = () => {
+      try {
+        const server = serve({ fetch: app.fetch, port }, () => {
+          currentServer = server;
+          currentPort = port;
+          process.stderr.write(`postino GUI: takeover http://localhost:${port}\n`);
+          resolve(true);
+        });
+        server.on("error", (err: NodeJS.ErrnoException) => {
+          if (err.code === "EADDRINUSE") {
+            process.stderr.write(`postino: takeover port ${port} already claimed\n`);
+          } else {
+            process.stderr.write(`postino: takeover failed: ${err.message}\n`);
+          }
+          // Restore old state if we had one
+          currentServer = oldServer;
+          currentPort = oldPort;
+          resolve(false);
+        });
+      } catch {
+        currentServer = oldServer;
+        currentPort = oldPort;
+        resolve(false);
+      }
+    };
+
+    if (oldServer) {
+      // Close existing server first, then start on the new port
+      currentServer = null;
+      currentPort = null;
+      oldServer.close(() => launchNew());
+    } else {
+      launchNew();
+    }
+  });
 }

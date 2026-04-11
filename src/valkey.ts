@@ -25,6 +25,7 @@ export const keys = {
   broadcastCursor: (agent: string) => `${prefix}bcursor:${agent}`,
   notifyChannel: (agent: string) => `${prefix}notify:${agent}`,
   eventsChannel: () => `${prefix}events`,
+  guiTakeoverChannel: () => `${prefix}gui:takeover`,
 };
 
 export async function connect(): Promise<void> {

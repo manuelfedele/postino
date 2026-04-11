@@ -140,7 +140,8 @@ function ensureEventSubscription(): void {
     subscribedToEvents = false;
   });
 
-  valkeySub.on("message", (_channel: string, message: string) => {
+  valkeySub.on("message", (channel: string, message: string) => {
+    if (channel !== keys.eventsChannel()) return;
     for (const client of sseClients) {
       try {
         client.send(message);

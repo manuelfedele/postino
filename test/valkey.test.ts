@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import "./setup.js";
 import { valkey, valkeySub, keys, connect, disconnect, registerAgent, deregisterAgent, renameAgent, getOnlineAgents, publishEvent } from "../src/valkey.js";
+import { getGuiState } from "../src/web/server.js";
 
 beforeAll(async () => {
   await connect();
@@ -17,6 +18,10 @@ describe("keys", () => {
     expect(keys.agentInfo("alice")).toContain("agent:alice");
     expect(keys.broadcasts()).toContain("broadcasts");
     expect(keys.broadcastCursor("alice")).toContain("bcursor:alice");
+  });
+
+  it("generates guiTakeoverChannel key", () => {
+    expect(keys.guiTakeoverChannel()).toContain("gui:takeover");
   });
 });
 
@@ -104,5 +109,36 @@ describe("publishEvent", () => {
     expect(parsed.timestamp).toBeDefined();
 
     await valkeySub.unsubscribe(keys.eventsChannel());
+  });
+});
+
+describe("GUI takeover pub/sub", () => {
+  it("receives gui_released on the takeover channel", async () => {
+    const received: string[] = [];
+    const channel = keys.guiTakeoverChannel();
+
+    await valkeySub.subscribe(channel);
+    const handler = (ch: string, msg: string) => {
+      if (ch === channel) received.push(msg);
+    };
+    valkeySub.on("message", handler);
+
+    const payload = JSON.stringify({ port: 3333 });
+    await valkey.publish(channel, payload);
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(received.length).toBe(1);
+    const parsed = JSON.parse(received[0]);
+    expect(parsed.port).toBe(3333);
+
+    valkeySub.off("message", handler);
+    await valkeySub.unsubscribe(channel);
+  });
+
+  it("getGuiState reports not running when no server started", () => {
+    const state = getGuiState();
+    expect(state.running).toBe(false);
+    expect(state.port).toBeNull();
   });
 });

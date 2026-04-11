@@ -3,9 +3,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./types.js";
-import { connect, disconnect, registerAgent, deregisterAgent } from "./valkey.js";
+import { connect, disconnect, valkey, valkeySub, keys, registerAgent, deregisterAgent } from "./valkey.js";
 import { registerMessagingTools } from "./tools/messaging.js";
-import { startWebServer } from "./web/server.js";
+import { startWebServer, getGuiState, restartOnPort } from "./web/server.js";
 
 const config = loadConfig();
 
@@ -22,6 +22,38 @@ const server = new McpServer(
 );
 
 registerMessagingTools(server, config.agentName);
+
+function subscribeGuiTakeover(): void {
+  const channel = keys.guiTakeoverChannel();
+
+  valkeySub.subscribe(channel).catch(() => {
+    process.stderr.write("postino: failed to subscribe to GUI takeover channel\n");
+  });
+
+  valkeySub.on("message", (ch: string, message: string) => {
+    if (ch !== channel) return;
+
+    let data: { port: number };
+    try {
+      data = JSON.parse(message);
+    } catch {
+      return;
+    }
+
+    const state = getGuiState();
+    // Skip if we already have a GUI on an equal or lower port
+    if (state.running && state.port !== null && state.port <= data.port) return;
+
+    // Random jitter (100-500ms) so not all instances race at once
+    const jitter = 100 + Math.random() * 400;
+    setTimeout(async () => {
+      const ok = await restartOnPort(data.port);
+      if (ok) {
+        process.stderr.write(`postino: took over GUI on port ${data.port}\n`);
+      }
+    }, jitter);
+  });
+}
 
 async function main(): Promise<void> {
   try {
@@ -46,11 +78,25 @@ async function main(): Promise<void> {
 
   if (config.webEnabled) {
     startWebServer(config.webPort);
+    subscribeGuiTakeover();
   }
 
   process.stderr.write(`postino agent: ${config.agentName}\n`);
 
   const shutdown = async () => {
+    // If this instance had a GUI, notify others so they can take over the port
+    const state = getGuiState();
+    if (state.running && state.port !== null) {
+      try {
+        await valkey.publish(
+          keys.guiTakeoverChannel(),
+          JSON.stringify({ port: state.port })
+        );
+      } catch {
+        // Best-effort, connection may already be closing
+      }
+    }
+
     await deregisterAgent(config.agentName);
     await disconnect();
     process.exit(0);
