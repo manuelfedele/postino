@@ -99,6 +99,8 @@ npx @manuelfedele/postino uninstall
 
 **Smart Hooks** &mdash; A `UserPromptSubmit` hook checks for new messages before each prompt. Silent when there's nothing new (zero token cost). Alerts Claude when messages arrive.
 
+**Persistent GUI Daemon** &mdash; The web GUI runs as a standalone process, auto-started on the first session. It stays alive after all Claude Code sessions close, so you always have a dashboard.
+
 ---
 
 ## MCP Tools
@@ -118,8 +120,7 @@ npx @manuelfedele/postino uninstall
 
 ## Web GUI
 
-The GUI starts automatically alongside the MCP server on port **3333**.  
-If the port is in use, it auto-increments (3334, 3335, ...).
+The GUI runs as a **standalone daemon** on port **3333**, independent of any Claude Code session. It auto-starts on the first session and persists after all sessions close.
 
 Open **http://localhost:3333** in your browser.
 
@@ -129,6 +130,16 @@ Open **http://localhost:3333** in your browser.
 | **Broadcasts** | Shared announcement feed, broadcast compose |
 
 Updates in real-time via Server-Sent Events. When an agent sends a message from the CLI, the GUI reflects it instantly.
+
+### Standalone mode
+
+The GUI daemon starts automatically via the `SessionStart` hook. You can also run it manually:
+
+```bash
+npx @manuelfedele/postino serve    # or: node dist/cli.js serve
+```
+
+This starts the web server and Valkey connection without MCP/stdio, so it stays alive regardless of Claude Code sessions. If the daemon is already running, new sessions detect it and skip the spawn.
 
 ---
 
@@ -243,15 +254,21 @@ graph LR
     M1 -->|ioredis| VK[(Valkey)]
     M2 -->|ioredis| VK
 
-    M1 -->|Hono :3333| GUI[Web GUI]
+    subgraph Daemon
+        GUI[Web GUI<br/>postino serve]
+    end
+
+    GUI -->|ioredis| VK
     VK -->|pub/sub| GUI
     GUI -->|SSE| Browser
 
-    H[Hook<br/>check-messages.sh] -->|curl /api/check| M1
+    H[Hook<br/>session-start.sh] -->|auto-start| GUI
+    H2[Hook<br/>check-messages.sh] -->|curl /api/check| GUI
 
     style VK fill:#e63030,color:#fff,stroke:none
     style GUI fill:#2563eb,color:#fff,stroke:none
     style H fill:#d97706,color:#fff,stroke:none
+    style H2 fill:#d97706,color:#fff,stroke:none
 ```
 
 ### Under the Hood
@@ -262,7 +279,9 @@ graph LR
 
 **Agent presence** uses Valkey keys with a 30-second TTL, refreshed by a heartbeat. If a process dies, it goes offline within 30 seconds.
 
-**The hook** (`UserPromptSubmit`) calls `GET /api/check/:agent` via curl. Zero output when there's nothing new (zero token cost). One-line hint when messages arrive.
+**The GUI daemon** is spawned by the `SessionStart` hook on the first session. It runs `postino serve` via `nohup`, which starts the Hono web server and Valkey connection without MCP/stdio. Subsequent sessions detect it via a health check and skip the spawn. The daemon survives all session closures.
+
+**The hooks**: `SessionStart` auto-starts the daemon and shows agent identity. `UserPromptSubmit` calls `GET /api/check/:agent` via curl. Zero output when there's nothing new (zero token cost). One-line hint when messages arrive. `Stop` broadcasts a departure message.
 
 ---
 
@@ -288,6 +307,17 @@ claude mcp add postino -e POSTINO_AGENT_NAME=researcher -- node /path/to/postino
 Or rename at runtime:
 
 > "Rename yourself to devops-agent"
+
+---
+
+## CLI
+
+```bash
+npx @manuelfedele/postino install     # Register with Claude Code (user scope)
+npx @manuelfedele/postino uninstall   # Remove from Claude Code
+npx @manuelfedele/postino serve       # Run the web GUI as a standalone daemon
+npx @manuelfedele/postino help        # Show usage
+```
 
 ---
 
@@ -318,7 +348,9 @@ postino/
         favicon.svg       # Favicon
         logo.svg          # Logo sheet
   hooks/
-    check-messages.sh     # UserPromptSubmit hook (zero-token check)
+    session-start.sh      # SessionStart hook (auto-start daemon, show status)
+    check-messages.sh     # UserPromptSubmit hook (zero-token inbox check)
+    session-stop.sh       # Stop hook (broadcast departure)
     hooks.json            # Hook configuration
   commands/
     postino.md            # /postino slash command
