@@ -133,28 +133,81 @@ Updates in real-time via Server-Sent Events. When an agent sends a message from 
 
 ## How It Works
 
-```
-Tab 1 (agent-A)                    Valkey                     Tab 2 (agent-B)
-     |                               |                              |
-     |-- msg_send(to=B, "do X") ---->|                              |
-     |                               |-- pub/sub notify ----------->|
-     |                               |                              |-- msg_check()
-     |                               |                              |   "1 unread message"
-     |                               |                              |-- msg_read()
-     |                               |<-- consume --------------------|   [{from: A, body: "do X"}]
-     |                               |                              |
-     |-- msg_broadcast("deploy") --->|-- shared list -------------->|
-     |                               |                              |-- msg_broadcasts()
-     |                               |                              |   [{from: A, body: "deploy"}]
+### 1-to-1 Messaging
+
+Messages work like a queue: send pushes, read pops.
+
+```mermaid
+sequenceDiagram
+    participant A as Tab 1 (agent-A)
+    participant V as Valkey
+    participant B as Tab 2 (agent-B)
+
+    A->>V: msg_send(to=B, "run tests")
+    V-->>B: pub/sub notify
+    Note over B: hook fires on next prompt
+    B->>V: msg_check()
+    V-->>B: "1 unread message"
+    B->>V: msg_read()
+    V-->>B: [{from: A, body: "run tests"}]
+    Note over V: message consumed
 ```
 
-**Messages** are Valkey lists (one per agent inbox). `msg_send` pushes, `msg_read` pops. Messages have a 24h TTL as a safety net for unread messages.
+### Broadcasts
 
-**Broadcasts** are a shared Valkey list. Each agent tracks a cursor (last-seen index). Reading broadcasts advances the cursor without deleting the data, so every agent sees every broadcast.
+Broadcasts are shared. Every agent reads independently via a per-agent cursor.
+
+```mermaid
+sequenceDiagram
+    participant A as Tab 1 (agent-A)
+    participant V as Valkey
+    participant B as Tab 2 (agent-B)
+    participant C as Tab 3 (agent-C)
+
+    A->>V: msg_broadcast("deploy freeze")
+    V-->>B: SSE event
+    V-->>C: SSE event
+    B->>V: msg_broadcasts()
+    V-->>B: [{from: A, body: "deploy freeze"}]
+    Note over V: cursor advanced for B
+    C->>V: msg_broadcasts()
+    V-->>C: [{from: A, body: "deploy freeze"}]
+    Note over V: cursor advanced for C
+    Note over V: message still exists (TTL expiry)
+```
+
+### Architecture
+
+```mermaid
+graph LR
+    subgraph Claude Code
+        T1[Tab 1<br/>MCP client] -->|stdio| M1[Postino<br/>MCP server]
+        T2[Tab 2<br/>MCP client] -->|stdio| M2[Postino<br/>MCP server]
+    end
+
+    M1 -->|ioredis| VK[(Valkey)]
+    M2 -->|ioredis| VK
+
+    M1 -->|Hono :3333| GUI[Web GUI]
+    VK -->|pub/sub| GUI
+    GUI -->|SSE| Browser
+
+    H[Hook<br/>check-messages.sh] -->|curl /api/check| M1
+
+    style VK fill:#e63030,color:#fff,stroke:none
+    style GUI fill:#2563eb,color:#fff,stroke:none
+    style H fill:#d97706,color:#fff,stroke:none
+```
+
+### Under the Hood
+
+**Messages** are Valkey lists (one per inbox). `msg_send` pushes, `msg_read` pops. Unread messages expire after 24h (configurable).
+
+**Broadcasts** are a shared Valkey list. Each agent tracks a cursor (last-seen index). Reading advances the cursor without deleting, so every agent sees every broadcast.
 
 **Agent presence** uses Valkey keys with a 30-second TTL, refreshed by a heartbeat. If a process dies, it goes offline within 30 seconds.
 
-**The hook** (`UserPromptSubmit`) calls `GET /api/check/:agent` via curl. If there are no new messages or broadcasts, it outputs nothing (zero tokens). If there's something new, it injects a one-line hint so Claude knows to check.
+**The hook** (`UserPromptSubmit`) calls `GET /api/check/:agent` via curl. Zero output when there's nothing new (zero token cost). One-line hint when messages arrive.
 
 ---
 
