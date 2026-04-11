@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/web/public/logo.svg" alt="postino" width="420">
+  <img src="src/web/public/logo-horizontal.svg" alt="postino - message broker for agents" width="440">
 </p>
 
 <p align="center">
