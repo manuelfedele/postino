@@ -21,10 +21,10 @@ result=$(curl -s --connect-timeout 1 --max-time 2 "http://127.0.0.1:${PORT}/api/
 msg=$(echo "$result" | grep -o '"unreadMessages":[0-9]*' | cut -d: -f2)
 bc=$(echo "$result" | grep -o '"unseenBroadcasts":[0-9]*' | cut -d: -f2)
 
-# Only output if there's something new
+# Only output if there's something new (zero output = zero token cost)
 if [ "${msg:-0}" -gt 0 ] || [ "${bc:-0}" -gt 0 ]; then
   parts=""
   [ "${msg:-0}" -gt 0 ] && parts="${msg} unread message(s)"
   [ "${bc:-0}" -gt 0 ] && { [ -n "$parts" ] && parts="$parts, "; parts="${parts}${bc} new broadcast(s)"; }
-  echo "[postino] ${parts}. Use msg_whoami to check details."
+  echo "[postino] ${parts}. Call msg_read now to handle them before continuing your work."
 fi

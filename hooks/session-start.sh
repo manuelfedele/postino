@@ -32,9 +32,23 @@ parts=""
 [ "${msg:-0}" -gt 0 ] && parts="${msg} unread message(s)"
 [ "${bc:-0}" -gt 0 ] && { [ -n "$parts" ] && parts="$parts, "; parts="${parts}${bc} new broadcast(s)"; }
 
-echo "[postino] Agent identity: ${AGENT}"
+# Fetch online agent count for context
+agents_json=$(curl -s --connect-timeout 1 --max-time 2 "http://127.0.0.1:${PORT}/api/agents" 2>/dev/null) || agents_json="[]"
+online=$(echo "$agents_json" | grep -o '"online":true' | wc -l | tr -d ' ')
+
+cat <<POSTINO
+[postino] You are "${AGENT}". ${online} other agent(s) online.
+POSTINO
+
 if [ -n "$parts" ]; then
-  echo "[postino] ${parts}. Use msg_whoami to check details."
-else
-  echo "[postino] No unread messages or broadcasts."
+  echo "[postino] ${parts}. Call msg_whoami now."
 fi
+
+cat <<'POSTINO'
+[postino] You have postino messaging tools. Use them:
+  - Call msg_whoami at the start of every session to orient yourself.
+  - Call msg_broadcast when you complete a task, hit a blocker, or have a status update.
+  - Call msg_read if you have unread messages, then act on them.
+  - Call msg_send to request help from or delegate work to a specific agent.
+  - Rename yourself with msg_rename to a meaningful name (e.g. "reviewer", "frontend-dev").
+POSTINO

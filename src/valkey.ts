@@ -75,7 +75,7 @@ export async function registerAgent(name: string): Promise<void> {
   }, HEARTBEAT_INTERVAL);
 }
 
-async function removeAgentIfEmpty(name: string): Promise<boolean> {
+async function removeAgentIfCleanable(name: string): Promise<boolean> {
   const inboxLen = await valkey.llen(keys.inbox(name));
   if (inboxLen > 0) return false;
   const pipe = valkey.pipeline();
@@ -88,7 +88,7 @@ async function removeAgentIfEmpty(name: string): Promise<boolean> {
 export async function deregisterAgent(name: string): Promise<void> {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   await valkey.del(keys.agentInfo(name));
-  await removeAgentIfEmpty(name);
+  await removeAgentIfCleanable(name);
   await publishEvent("agent_offline", { agent: name });
 }
 
@@ -96,19 +96,31 @@ export async function cleanupStaleAgents(): Promise<string[]> {
   const allAgents = await valkey.smembers(keys.agents());
   if (allAgents.length === 0) return [];
 
-  // Batch check online status for all agents
+  // Batch check online status and inbox existence for all agents
   const pipe = valkey.pipeline();
   for (const name of allAgents) {
     pipe.exists(keys.agentInfo(name));
+    pipe.exists(keys.inbox(name));
   }
   const results = await pipe.exec();
 
   const removed: string[] = [];
   for (let i = 0; i < allAgents.length; i++) {
-    const online = results?.[i]?.[1];
+    const online = results?.[i * 2]?.[1];
     if (online) continue;
-    const wasRemoved = await removeAgentIfEmpty(allAgents[i]);
-    if (wasRemoved) removed.push(allAgents[i]);
+
+    const hasInbox = results?.[i * 2 + 1]?.[1];
+    if (hasInbox) {
+      // Offline but inbox still has messages (TTL hasn't expired yet), skip
+      continue;
+    }
+
+    // Offline and inbox gone (or empty): safe to remove from set
+    const removePipe = valkey.pipeline();
+    removePipe.srem(keys.agents(), allAgents[i]);
+    removePipe.del(keys.broadcastCursor(allAgents[i]));
+    await removePipe.exec();
+    removed.push(allAgents[i]);
   }
 
   return removed;

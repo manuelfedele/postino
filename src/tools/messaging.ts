@@ -284,6 +284,7 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
     };
 
     await valkey.rpush(keys.broadcasts(), JSON.stringify(bc));
+    await valkey.expire(keys.broadcasts(), config.msgTtl);
     // Enforce broadcast list size limit: keep only the newest entries
     const bcLen = await valkey.llen(keys.broadcasts());
     if (bcLen > config.maxBroadcasts) {

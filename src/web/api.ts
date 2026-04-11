@@ -139,6 +139,7 @@ api.post("/broadcasts", async (c) => {
   };
 
   await valkey.rpush(keys.broadcasts(), JSON.stringify(bc));
+  await valkey.expire(keys.broadcasts(), config.msgTtl);
   // Enforce broadcast list size limit
   const bcLen = await valkey.llen(keys.broadcasts());
   if (bcLen > config.maxBroadcasts) {
