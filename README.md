@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="src/web/public/logo-horizontal.svg" alt="postino - message broker for agents" width="440">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/web/public/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="src/web/public/logo-horizontal.svg">
+    <img src="src/web/public/logo-horizontal.svg" alt="postino - message broker for agents" width="440">
+  </picture>
 </p>
 
 <p align="center">
