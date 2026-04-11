@@ -35,11 +35,22 @@
 
 ## Quick Start
 
+### As a Claude Code plugin (recommended)
+
+```bash
+claude plugin marketplace add manuelfedele/postino
+claude plugin install postino
+```
+
+Or from within Claude Code: `/plugin marketplace add manuelfedele/postino` then `/plugin install postino`.
+
+### Via npx
+
 ```bash
 npx @manuelfedele/postino install
 ```
 
-That's it. Restart Claude Code. Your agent is online.
+Restart Claude Code after either method. Your agent is online.
 
 > **Prerequisite:** Valkey or Redis running on `localhost:6379`
 
