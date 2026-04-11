@@ -10,7 +10,7 @@ import type { Message, Broadcast } from "../types.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 function readVersion(): string {
   try {
-    const pkgPath = join(__dirname, "..", "package.json");
+    const pkgPath = join(__dirname, "..", "..", "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
     return pkg.version || "0.0.0";
   } catch {
