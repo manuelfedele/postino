@@ -74,7 +74,34 @@ export async function registerAgent(name: string): Promise<void> {
 export async function deregisterAgent(name: string): Promise<void> {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   await valkey.del(keys.agentInfo(name));
+
+  // Auto-cleanup: remove from agents set if inbox is empty
+  const inboxLen = await valkey.llen(keys.inbox(name));
+  if (inboxLen === 0) {
+    await valkey.srem(keys.agents(), name);
+    await valkey.del(keys.broadcastCursor(name));
+  }
+
   await publishEvent("agent_offline", { agent: name });
+}
+
+export async function cleanupStaleAgents(): Promise<string[]> {
+  const allAgents = await valkey.smembers(keys.agents());
+  const removed: string[] = [];
+
+  for (const name of allAgents) {
+    const online = await valkey.exists(keys.agentInfo(name));
+    if (online) continue;
+
+    const inboxLen = await valkey.llen(keys.inbox(name));
+    if (inboxLen === 0) {
+      await valkey.srem(keys.agents(), name);
+      await valkey.del(keys.broadcastCursor(name));
+      removed.push(name);
+    }
+  }
+
+  return removed;
 }
 
 export async function renameAgent(oldName: string, newName: string): Promise<void> {

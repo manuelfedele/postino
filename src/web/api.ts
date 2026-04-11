@@ -1,8 +1,23 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { valkey, valkeySub, keys, publishEvent, getOnlineAgents } from "../valkey.js";
 import { loadConfig } from "../types.js";
 import type { Message, Broadcast } from "../types.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+function readVersion(): string {
+  try {
+    const pkgPath = join(__dirname, "..", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+const VERSION = readVersion();
 
 const config = loadConfig();
 
@@ -103,7 +118,7 @@ api.get("/stats", async (c) => {
   }
   const broadcastCount = await valkey.llen(keys.broadcasts());
 
-  return c.json({ agentCount: agents.length, messageCount, broadcastCount });
+  return c.json({ version: VERSION, agentCount: agents.length, messageCount, broadcastCount });
 });
 
 // --- Agent-specific check (for hooks, zero-token) ---

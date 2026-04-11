@@ -141,7 +141,7 @@
   <div class="topbar">
     <div class="logo">
       <h1>postino</h1>
-      <span class="pill pill-muted">v0.1.0</span>
+      <span class="pill pill-muted" id="version"></span>
       <span class="pill pill-accent" id="agent-id"></span>
     </div>
     <div class="meta">
@@ -288,7 +288,7 @@ function connectSSE(){
   es.onerror=()=>{d.className='dot dot-off';t.textContent='reconnecting'};
 }
 
-async function loadStats(){const s=await api('/stats');if(!s)return;document.getElementById('stat-agents').textContent=s.agentCount+' agents';document.getElementById('stat-msg').textContent=s.messageCount+' msg';document.getElementById('stat-bc').textContent=s.broadcastCount+' bc'}
+async function loadStats(){const s=await api('/stats');if(!s)return;document.getElementById('version').textContent='v'+s.version;document.getElementById('stat-agents').textContent=s.agentCount+' agents';document.getElementById('stat-msg').textContent=s.messageCount+' msg';document.getElementById('stat-bc').textContent=s.broadcastCount+' bc'}
 
 function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function fmtT(i){try{const d=new Date(i),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}catch{return i}}

@@ -93,42 +93,29 @@ export function startWebServer(port: number, attempt = 0): void {
 
 export function restartOnPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const oldServer = currentServer;
-    const oldPort = currentPort;
-
-    const launchNew = () => {
-      try {
-        const server = serve({ fetch: app.fetch, port }, () => {
-          currentServer = server;
-          currentPort = port;
-          process.stderr.write(`postino GUI: takeover http://localhost:${port}\n`);
-          resolve(true);
-        });
-        server.on("error", (err: NodeJS.ErrnoException) => {
-          if (err.code === "EADDRINUSE") {
-            process.stderr.write(`postino: takeover port ${port} already claimed\n`);
-          } else {
-            process.stderr.write(`postino: takeover failed: ${err.message}\n`);
-          }
-          // Restore old state if we had one
-          currentServer = oldServer;
-          currentPort = oldPort;
-          resolve(false);
-        });
-      } catch {
-        currentServer = oldServer;
-        currentPort = oldPort;
+    try {
+      const server = serve({ fetch: app.fetch, port }, () => {
+        // New server started successfully, close the old one
+        const oldServer = currentServer;
+        currentServer = server;
+        currentPort = port;
+        process.stderr.write(`postino GUI: takeover http://localhost:${port}\n`);
+        if (oldServer) {
+          oldServer.close();
+        }
+        resolve(true);
+      });
+      server.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+          process.stderr.write(`postino: takeover port ${port} already claimed\n`);
+        } else {
+          process.stderr.write(`postino: takeover failed: ${err.message}\n`);
+        }
+        // Old server stays running, state unchanged
         resolve(false);
-      }
-    };
-
-    if (oldServer) {
-      // Close existing server first, then start on the new port
-      currentServer = null;
-      currentPort = null;
-      oldServer.close(() => launchNew());
-    } else {
-      launchNew();
+      });
+    } catch {
+      resolve(false);
     }
   });
 }

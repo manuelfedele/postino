@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { valkey, keys, publishEvent, getOnlineAgents, renameAgent } from "../valkey.js";
+import { valkey, keys, publishEvent, getOnlineAgents, renameAgent, cleanupStaleAgents } from "../valkey.js";
 import { loadConfig } from "../types.js";
 import type { Message, Broadcast } from "../types.js";
 
@@ -311,6 +311,27 @@ export function registerMessagingTools(server: McpServer, initialName: string): 
       content: [{
         type: "text" as const,
         text: JSON.stringify({ unseen: unseen.length, total: broadcasts.length, broadcasts: unseen }, null, 2),
+      }],
+    };
+  });
+
+  server.registerTool("msg_cleanup", {
+    title: "Cleanup Stale Agents",
+    description: [
+      "Remove offline agents with empty inboxes from the agents list.",
+      "Agents are auto-cleaned on shutdown, but this tool handles stragglers",
+      "(e.g. crashed processes that never ran their shutdown handler).",
+    ].join(" "),
+    inputSchema: {},
+  }, async () => {
+    const removed = await cleanupStaleAgents();
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: removed.length > 0
+          ? `Removed ${removed.length} stale agent(s): ${removed.join(", ")}`
+          : "No stale agents to clean up",
       }],
     };
   });
