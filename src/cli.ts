@@ -5,16 +5,17 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverPath = join(__dirname, "index.js");
-const command = process.argv[2];
+const args = process.argv.slice(2);
+const command = args[0];
 
-function printMcpConfig(): void {
+function printMcpConfig(agentName?: string): void {
   console.log(
     JSON.stringify(
       {
         postino: {
           command: process.execPath,
           args: [serverPath],
-          env: {},
+          env: agentName ? { POSTINO_AGENT_NAME: agentName } : {},
         },
       },
       null,
@@ -39,9 +40,13 @@ async function serve(): Promise<void> {
     process.exit(1);
   }
 
-  startWebServer(config.webPort);
+  const actualPort = await startWebServer(config.webPort);
+  if (actualPort === null) {
+    await disconnect();
+    process.exit(1);
+  }
   console.log(
-    `\n  postino GUI running at http://localhost:${config.webPort}\n`,
+    `\n  postino GUI running at http://${config.webHost}:${actualPort}\n`,
   );
 
   let stopping = false;
@@ -62,7 +67,7 @@ function printHelp(): void {
   Usage:
     npx postino mcp          Start the MCP server over stdio
     npx postino serve        Run the web interface as a standalone daemon
-    npx postino config       Print an MCP server configuration entry
+    npx postino config [--agent NAME]  Print an MCP server configuration entry
     npx postino help         Show this help
 
   Postino exposes the same messaging system through MCP tools and a REST/SSE
@@ -82,7 +87,7 @@ switch (command) {
     serve();
     break;
   case "config":
-    printMcpConfig();
+    printMcpConfig(args[args.indexOf("--agent") + 1]);
     break;
   case "help":
   case "--help":

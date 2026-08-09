@@ -22,9 +22,9 @@
         <p class="bp-masthead-sub">Durable communication across independent agents, processes, and people.</p>
       </div>
       <div class="postino-masthead-actions">
-        <span class="bp-status" data-tone="good" id="connection-status">
+        <span class="bp-status" data-tone="warning" id="connection-status">
           <span class="bp-status-dot" aria-hidden="true"></span>
-          <span>LIVE LINK</span>
+          <span>CONNECTING</span>
         </span>
         <span class="bp-tag postino-identity" id="identity-tag">relay / demo</span>
       </div>
@@ -60,7 +60,7 @@
         </div>
         <div class="bp-stat">
           <span class="bp-label">Message retention</span>
-          <span class="bp-stat-value">24<span class="bp-stat-unit">h</span></span>
+          <span class="bp-stat-value" id="stat-retention">--<span class="bp-stat-unit">h</span></span>
           <div class="bp-stat-foot">Valkey / local store</div>
         </div>
       </div>
@@ -146,6 +146,7 @@
 
 <script>
 const API = `${location.origin}/api`;
+const API_TOKEN = __POSTINO_API_TOKEN__;
 const params = new URLSearchParams(location.search);
 const demoMode = params.has('demo');
 const state = {
@@ -156,6 +157,8 @@ const state = {
   filter: '',
   events: [],
 };
+let refreshGeneration = 0;
+let mutationBusy = false;
 
 const sampleAgents = [
   { name: 'orchestrator', messageCount: 2, online: true },
@@ -330,24 +333,30 @@ function selectInbox(name) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json' }, ...options });
-  return response.json();
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`;
+  const response = await fetch(`${API}${path}`, { ...options, headers });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
 }
 
 async function refresh() {
+  const generation = ++refreshGeneration;
   if (demoMode) {
     render();
     addEvent('demo data refreshed / no external store queried', 'debug');
     return;
   }
   try {
-    const [agents, broadcasts, stats] = await Promise.all([request('/agents'), request('/broadcasts'), request('/stats')]);
+    const [agentsResponse, broadcastsResponse, stats] = await Promise.all([request('/agents'), request('/broadcasts'), request('/stats')]);
+    const agents = agentsResponse.items;
+    const messages = await Promise.all(agents.map((agent) => request(`/messages/${encodeURIComponent(agent.name)}`)));
+    if (generation !== refreshGeneration) return;
     state.agents = agents;
-    state.broadcasts = broadcasts;
-    for (const agent of agents) {
-      const messages = await request(`/messages/${encodeURIComponent(agent.name)}`);
-      state.messages[agent.name] = messages;
-    }
+    state.broadcasts = broadcastsResponse.items;
+    document.getElementById('stat-retention').innerHTML = `${Math.round(stats.messageTtl / 3600)}<span class="bp-stat-unit">h</span>`;
+    agents.forEach((agent, index) => { state.messages[agent.name] = messages[index].items; });
     document.getElementById('connection-status').dataset.tone = 'good';
     document.getElementById('connection-status').lastElementChild.textContent = 'LIVE LINK';
     render();
@@ -362,48 +371,69 @@ async function refresh() {
 async function sendMessage() {
   const body = document.getElementById('message-body').value.trim();
   const from = document.getElementById('message-from').value.trim() || 'operator';
-  if (!state.activeInbox || !body) return;
+  if (!state.activeInbox || !body || mutationBusy) return;
+  mutationBusy = true;
   const message = { id: `local-${Date.now()}`, from, to: state.activeInbox, body, timestamp: new Date().toISOString() };
-  if (demoMode) {
-    state.messages[state.activeInbox] = [...(state.messages[state.activeInbox] || []), message];
-    const agent = state.agents.find((item) => item.name === state.activeInbox);
-    if (agent) agent.messageCount += 1;
-  } else {
-    await request('/messages', { method: 'POST', body: JSON.stringify({ to: state.activeInbox, from, body }) });
-    await refresh();
+  try {
+    if (demoMode) {
+      state.messages[state.activeInbox] = [...(state.messages[state.activeInbox] || []), message];
+      const agent = state.agents.find((item) => item.name === state.activeInbox);
+      if (agent) agent.messageCount += 1;
+    } else {
+      await request('/messages', { method: 'POST', body: JSON.stringify({ to: state.activeInbox, from, body }), headers: { 'Idempotency-Key': message.id } });
+      await refresh();
+    }
+    document.getElementById('message-body').value = '';
+    addEvent(`${from} -> ${state.activeInbox} / direct message queued`, 'info');
+  } catch (error) {
+    addEvent(`direct message failed / ${error.message}`, 'error');
+  } finally {
+    mutationBusy = false;
+    render();
   }
-  document.getElementById('message-body').value = '';
-  addEvent(`${from} -> ${state.activeInbox} / direct message queued`, 'info');
-  render();
 }
 
 async function sendBroadcast() {
   const body = document.getElementById('broadcast-body').value.trim();
   const from = document.getElementById('broadcast-from').value.trim() || 'operator';
-  if (!body) return;
+  if (!body || mutationBusy) return;
+  mutationBusy = true;
   const broadcast = { id: `local-${Date.now()}`, from, body, timestamp: new Date().toISOString() };
-  if (demoMode) state.broadcasts.push(broadcast);
-  else {
-    await request('/broadcasts', { method: 'POST', body: JSON.stringify({ from, body }) });
-    await refresh();
+  try {
+    if (demoMode) state.broadcasts.push(broadcast);
+    else {
+      await request('/broadcasts', { method: 'POST', body: JSON.stringify({ from, body }), headers: { 'Idempotency-Key': broadcast.id } });
+      await refresh();
+    }
+    document.getElementById('broadcast-body').value = '';
+    addEvent(`${from} / broadcast delivered to all identities`, 'warn');
+  } catch (error) {
+    addEvent(`broadcast failed / ${error.message}`, 'error');
+  } finally {
+    mutationBusy = false;
+    render();
   }
-  document.getElementById('broadcast-body').value = '';
-  addEvent(`${from} / broadcast delivered to all identities`, 'warn');
-  render();
 }
 
 async function clearInbox() {
-  if (!state.activeInbox) return;
-  if (demoMode) {
-    state.messages[state.activeInbox] = [];
-    const agent = state.agents.find((item) => item.name === state.activeInbox);
-    if (agent) agent.messageCount = 0;
-  } else {
-    await request(`/messages/${encodeURIComponent(state.activeInbox)}`, { method: 'DELETE' });
-    await refresh();
+  if (!state.activeInbox || mutationBusy) return;
+  mutationBusy = true;
+  try {
+    if (demoMode) {
+      state.messages[state.activeInbox] = [];
+      const agent = state.agents.find((item) => item.name === state.activeInbox);
+      if (agent) agent.messageCount = 0;
+    } else {
+      await request(`/messages/${encodeURIComponent(state.activeInbox)}`, { method: 'DELETE' });
+      await refresh();
+    }
+    addEvent(`${state.activeInbox} / inbox cleared`, 'warn');
+  } catch (error) {
+    addEvent(`inbox clear failed / ${error.message}`, 'error');
+  } finally {
+    mutationBusy = false;
+    render();
   }
-  addEvent(`${state.activeInbox} / inbox cleared`, 'warn');
-  render();
 }
 
 document.getElementById('agent-search').addEventListener('input', (event) => {
@@ -419,6 +449,8 @@ document.getElementById('broadcast-body').addEventListener('keydown', (event) =>
 
 if (demoMode) {
   cloneDemoData();
+  document.getElementById('connection-status').dataset.tone = 'good';
+  document.getElementById('connection-status').lastElementChild.textContent = 'LIVE LINK';
   document.getElementById('identity-tag').textContent = 'relay / sample';
   document.getElementById('footer-mode').textContent = 'HTTP + MCP / SAMPLE DATA';
   state.events = [
@@ -428,10 +460,14 @@ if (demoMode) {
     { body: 'reviewer is offline with 3 queued messages', level: 'debug', timestamp: '2026-08-09T12:18:00Z' },
   ];
   state.activeInbox = 'orchestrator';
+  document.getElementById('stat-retention').innerHTML = '24<span class="bp-stat-unit">h</span>';
+} else {
+  document.getElementById('identity-tag').textContent = 'relay / live';
+  document.getElementById('footer-mode').textContent = 'HTTP + MCP / LIVE DATA';
 }
 render();
 if (!demoMode) refresh();
-if (!demoMode && typeof EventSource !== 'undefined') {
+if (!demoMode && !API_TOKEN && typeof EventSource !== 'undefined') {
   const events = new EventSource(`${API}/events`);
   events.addEventListener('update', (event) => {
     try {
@@ -445,6 +481,7 @@ if (!demoMode && typeof EventSource !== 'undefined') {
     document.getElementById('connection-status').lastElementChild.textContent = 'RECONNECTING';
   };
 }
+if (!demoMode && API_TOKEN) setInterval(refresh, 15_000);
 </script>
 </body>
 </html>

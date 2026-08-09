@@ -10,7 +10,7 @@
 
 <p align="center">
   Postino connects independent agents, processes, CI jobs, and humans through<br>
-  durable direct messages, broadcasts, a REST/SSE API, and an MCP adapter.
+  leased direct messages, broadcasts, a REST/SSE API, and an MCP adapter.
 </p>
 
 <p align="center">
@@ -35,14 +35,14 @@ Agents often run in separate processes, terminals, workers, containers, or orche
 | Capability | Postino |
 |:-----------|:-------:|
 | Direct agent-to-agent messages | Yes |
-| Messages survive process restarts | Yes |
+| Queued messages survive agent restarts | Yes |
 | Broadcasts to all agents | Yes |
 | External scripts and CI integration | Yes |
 | Human-to-agent messages | Yes |
 | Live activity dashboard | Yes |
 | Framework-specific agent dependency | No |
 
-Valkey or Redis is the only infrastructure dependency.
+Valkey or Redis is the only infrastructure dependency. Persistence across a storage-server restart depends on that server's persistence configuration.
 
 ## Quick Start
 
@@ -117,14 +117,15 @@ MCP clients receive these tools:
 | `msg_whoami` | Identity, unread messages, unseen broadcasts, and agent status |
 | `msg_check` | Check for new activity without consuming it |
 | `msg_send` | Send a direct message to one agent |
-| `msg_read` | Read and consume messages from an inbox |
+| `msg_read` | Lease messages from the current inbox |
+| `msg_ack` | Acknowledge leased messages after processing |
 | `msg_broadcast` | Send an announcement to all agents |
 | `msg_broadcasts` | Read unseen or all broadcasts |
 | `msg_list_agents` | List known agents and online status |
 | `msg_rename` | Change the current agent name |
 | `msg_cleanup` | Remove stale offline agents with empty inboxes |
 
-Messages use a queue model: sending appends to an inbox and reading consumes entries. Broadcasts are shared and tracked with a per-agent cursor, so each agent can read them independently until the configured TTL expires.
+Messages use a queue model: sending appends to an inbox, `msg_read` leases entries, and `msg_ack` removes them after successful processing. Unacknowledged leases are redelivered. Broadcasts use stable IDs and a per-agent cursor, so trimming cannot silently skip new entries.
 
 ## Web Interface
 
@@ -144,6 +145,10 @@ It provides:
 
 The daemon can be run once per machine. If multiple MCP processes start the web interface, Postino coordinates port takeover through Valkey.
 
+The HTTP server binds to `127.0.0.1` by default. Set `POSTINO_WEB_HOST` only for an intentional network deployment. For network access, also set `POSTINO_API_TOKEN`; requests then require `Authorization: Bearer <token>` or `X-Postino-Token`.
+
+When a token is configured, open the GUI once with `http://host:3333/?token=<token>` to establish its local HttpOnly cookie. Do not put the token in public screenshots or shared links.
+
 The GUI bundles the Prussian blueprint locally in `src/web/public/prussian.css` and `src/web/public/prussian-tokens.json`. It uses the system's square containers, engineering grid, mono data, amber action color, status glyphs, and role-specific message rules without a runtime design-system dependency.
 
 Open `http://localhost:3333/?demo=1` for a deterministic local showcase populated with sample agents, queued messages, event-stream entries, and broadcasts. Demo actions stay in the browser and never write to Valkey.
@@ -160,6 +165,8 @@ Open `http://localhost:3333/?demo=1` for a deterministic local showcase populate
 
 All endpoints are under `/api`:
 
+Collection endpoints accept `offset` and `limit` query parameters. `limit` is capped at 200.
+
 | Method | Endpoint | Purpose |
 |:-------|:---------|:--------|
 | `GET` | `/health` | Storage and process health |
@@ -167,6 +174,8 @@ All endpoints are under `/api`:
 | `GET` | `/agents` | Known agents and presence |
 | `GET` | `/messages/:agent` | Inspect an inbox |
 | `POST` | `/messages` | Add a direct message |
+| `POST` | `/messages/:agent/read` | Lease messages for a consumer |
+| `POST` | `/messages/:agent/ack` | Acknowledge leased messages |
 | `DELETE` | `/messages/:agent` | Clear an inbox |
 | `GET` | `/broadcasts` | List active broadcasts |
 | `POST` | `/broadcasts` | Create a broadcast |
@@ -193,8 +202,8 @@ graph LR
     G --> V
 ```
 
-- Direct messages are stored as one Valkey list per inbox.
-- Broadcasts are stored in a shared list with one cursor per agent.
+- Direct messages are stored as one Valkey list per inbox with lease metadata.
+- Broadcasts are stored in a shared list with stable IDs and one cursor per agent.
 - Presence keys use a short TTL and are refreshed by a heartbeat.
 - Messages and broadcasts expire after the configured TTL.
 - The HTTP interface is useful for integrations that do not speak MCP.
@@ -206,15 +215,20 @@ All configuration is provided through environment variables:
 | Variable | Default | Description |
 |:---------|:--------|:------------|
 | `POSTINO_VALKEY_URL` | `redis://127.0.0.1:6379` | Valkey or Redis connection URL |
+| `POSTINO_WEB_HOST` | `127.0.0.1` | HTTP bind address |
 | `POSTINO_WEB_PORT` | `3333` | HTTP and web interface port |
 | `POSTINO_WEB_ENABLED` | `true` | Set to `false` for MCP-only mode |
+| `POSTINO_API_TOKEN` | unset | Bearer token for HTTP, GUI, and SSE access |
+| `POSTINO_CORS_ORIGIN` | unset | Optional explicit allowed CORS origin |
 | `POSTINO_AGENT_NAME` | auto-detected | Agent identity override |
 | `POSTINO_MSG_TTL` | `86400` | Message and broadcast TTL in seconds |
+| `POSTINO_MESSAGE_LEASE` | `30` | Seconds before an unacknowledged message is redelivered |
 | `POSTINO_KEY_PREFIX` | `po:` | Prefix for all Valkey keys |
 | `POSTINO_MAX_INBOX` | `1000` | Maximum messages retained per inbox |
 | `POSTINO_MAX_BROADCASTS` | `500` | Maximum broadcasts retained |
+| `POSTINO_MAX_BODY_BYTES` | `65536` | Maximum JSON request body size |
 
-Names are limited to 64 alphanumeric characters plus hyphens, dots, and underscores. If no name is configured, Postino derives one from the terminal session when available, otherwise from the process ID.
+Names are limited to 64 alphanumeric characters plus hyphens, dots, and underscores. If no name is configured, Postino derives one from the terminal session when available, otherwise from a stable host/workspace fingerprint. Use `POSTINO_AGENT_NAME` or `npx postino config --agent NAME` when multiple independent agents share a workspace.
 
 ## CLI
 
@@ -226,6 +240,8 @@ npx postino help      # Show usage
 ```
 
 There is no universal agent installation or lifecycle-hook format. Agent runtimes own registration, startup, shutdown, and polling. Postino provides protocol endpoints that can be embedded into those workflows without a product-specific plugin.
+
+Delivery is at-least-once after leasing: an agent must acknowledge a message after processing it, and handlers should be idempotent. `POST /messages` and `msg_send` accept an idempotency key, so retries do not create duplicate messages.
 
 ## Development
 

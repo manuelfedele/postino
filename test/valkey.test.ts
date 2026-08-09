@@ -1,6 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import "./setup.js";
-import { valkey, valkeySub, keys, connect, disconnect, registerAgent, deregisterAgent, renameAgent, getOnlineAgents, publishEvent } from "../src/valkey.js";
+import {
+  appendBroadcast,
+  appendMessage,
+  acknowledgeMessages,
+  getOnlineAgents,
+  connect,
+  deregisterAgent,
+  disconnect,
+  keys,
+  leaseMessages,
+  publishEvent,
+  readBroadcastsForAgent,
+  registerAgent,
+  renameAgent,
+  valkey,
+  valkeySub,
+} from "../src/valkey.js";
 
 beforeAll(async () => {
   await connect();
@@ -18,7 +34,6 @@ describe("keys", () => {
     expect(keys.broadcasts()).toContain("broadcasts");
     expect(keys.broadcastCursor("alice")).toContain("bcursor:alice");
   });
-
 });
 
 describe("agent registration", () => {
@@ -45,7 +60,10 @@ describe("renameAgent", () => {
     await registerAgent("old-name");
 
     // Put a message in the old inbox
-    await valkey.rpush(keys.inbox("old-name"), JSON.stringify({ body: "hello" }));
+    await valkey.rpush(
+      keys.inbox("old-name"),
+      JSON.stringify({ body: "hello" }),
+    );
     await valkey.sadd(keys.agents(), "old-name");
 
     await renameAgent("old-name", "new-name");
@@ -108,3 +126,48 @@ describe("publishEvent", () => {
   });
 });
 
+describe("leased messages", () => {
+  it("redelivers an unacknowledged lease after expiry", async () => {
+    await appendMessage({
+      id: "lease-redelivery",
+      from: "a",
+      to: "lease-agent",
+      body: "retry",
+      timestamp: new Date().toISOString(),
+    });
+    const first = await leaseMessages("lease-agent", "consumer-a", 1);
+    expect(first[0].id).toBe("lease-redelivery");
+    await valkey.del(
+      keys.inboxPending("lease-agent"),
+      keys.inboxPendingDue("lease-agent"),
+    );
+    const second = await leaseMessages("lease-agent", "consumer-b", 1);
+    expect(second[0].id).toBe("lease-redelivery");
+    const ack = await acknowledgeMessages("lease-agent", "consumer-b", [
+      "lease-redelivery",
+    ]);
+    expect(ack.acknowledged).toEqual(["lease-redelivery"]);
+  });
+});
+
+describe("stable broadcast cursors", () => {
+  it("replays retained broadcasts when the cursor was trimmed", async () => {
+    await valkey.del(keys.broadcasts(), keys.broadcastCursor("cursor-agent"));
+    await appendBroadcast({
+      id: "broadcast-a",
+      from: "a",
+      body: "a",
+      timestamp: new Date().toISOString(),
+    });
+    await valkey.set(keys.broadcastCursor("cursor-agent"), "broadcast-a");
+    await valkey.del(keys.broadcasts());
+    await appendBroadcast({
+      id: "broadcast-b",
+      from: "b",
+      body: "b",
+      timestamp: new Date().toISOString(),
+    });
+    const result = await readBroadcastsForAgent("cursor-agent", false, false);
+    expect(result.broadcasts.map((item) => item.id)).toContain("broadcast-b");
+  });
+});

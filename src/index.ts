@@ -1,19 +1,40 @@
 #!/usr/bin/env node
 
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./types.js";
-import { connect, disconnect, valkey, valkeySub, keys, registerAgent, deregisterAgent, getOnlineAgents } from "./valkey.js";
+import {
+  connect,
+  disconnect,
+  getInboxCount,
+  getOnlineAgents,
+  keys,
+  listInbox,
+  registerAgent,
+  deregisterAgent,
+  valkey,
+  valkeySub,
+} from "./valkey.js";
 import { registerMessagingTools } from "./tools/messaging.js";
-import { startWebServer, getGuiState, restartOnPort } from "./web/server.js";
-import type { Message } from "./types.js";
+import { VERSION } from "./web/api.js";
+import {
+  getGuiState,
+  restartOnPort,
+  startWebServer,
+  stopWebServer,
+} from "./web/server.js";
 
 const config = loadConfig();
+let currentAgentName = config.agentName;
+const instanceId = crypto.randomUUID();
 
 const server = new McpServer(
   {
     name: "postino",
-    version: "0.1.0",
+    version: VERSION,
   },
   {
     capabilities: {
@@ -22,10 +43,12 @@ const server = new McpServer(
       prompts: {},
       logging: {},
     },
-  }
+  },
 );
 
-registerMessagingTools(server, config.agentName);
+registerMessagingTools(server, config.agentName, (name) => {
+  currentAgentName = name;
+});
 
 // --- MCP Resources ---
 
@@ -34,35 +57,42 @@ async function getFormattedAgents() {
   const onlineSet = new Set(await getOnlineAgents());
   const result = [];
   for (const name of allAgents.sort()) {
-    const msgCount = await valkey.llen(keys.inbox(name));
+    const msgCount = await getInboxCount(name);
     result.push({ name, online: onlineSet.has(name), messages: msgCount });
   }
   return result;
 }
 
 async function getInboxMessages(agent: string) {
-  const raw = await valkey.lrange(keys.inbox(agent), 0, -1);
-  return raw.map((r: string) => JSON.parse(r) as Message);
+  if (agent !== currentAgentName)
+    throw new Error("Agents may only inspect their own inbox");
+  return (await listInbox(agent, 0, config.maxInbox)).items;
 }
 
-server.registerResource("agents", "postino://agents", {
-  description: "List of all registered postino agents with online status",
-  mimeType: "application/json",
-}, async () => ({
-  contents: [{
-    uri: "postino://agents",
+server.registerResource(
+  "agents",
+  "postino://agents",
+  {
+    description: "List of all registered agents with online status",
     mimeType: "application/json",
-    text: JSON.stringify(await getFormattedAgents()),
-  }],
-}));
+  },
+  async () => ({
+    contents: [
+      {
+        uri: "postino://agents",
+        mimeType: "application/json",
+        text: JSON.stringify(await getFormattedAgents()),
+      },
+    ],
+  }),
+);
 
 server.registerResource(
   "inbox",
   new ResourceTemplate("postino://inbox/{agent}", {
     list: async () => {
-      const agents = await valkey.smembers(keys.agents());
       return {
-        resources: agents.sort().map(name => ({
+        resources: [currentAgentName].map((name) => ({
           uri: `postino://inbox/${name}`,
           name: `${name}'s inbox`,
           mimeType: "application/json",
@@ -71,8 +101,7 @@ server.registerResource(
     },
     complete: {
       agent: async (value) => {
-        const agents = await valkey.smembers(keys.agents());
-        return agents.filter(a => a.startsWith(value)).sort();
+        return [currentAgentName].filter((a) => a.startsWith(value)).sort();
       },
     },
   }),
@@ -81,49 +110,65 @@ server.registerResource(
     mimeType: "application/json",
   },
   async (uri, { agent }) => ({
-    contents: [{
-      uri: uri.href,
-      mimeType: "application/json",
-      text: JSON.stringify(await getInboxMessages(agent as string)),
-    }],
-  })
+    contents: [
+      {
+        uri: uri.href,
+        mimeType: "application/json",
+        text: JSON.stringify(await getInboxMessages(agent as string)),
+      },
+    ],
+  }),
 );
 
 // --- MCP Prompts ---
 
-server.registerPrompt("check-messages", {
-  description: "Check your postino inbox for new messages and broadcasts",
-}, async () => ({
-  messages: [{
-    role: "user" as const,
-    content: {
-      type: "text" as const,
-      text: "Check my postino inbox for new messages and broadcasts. Use msg_whoami to get a full status overview.",
-    },
-  }],
-}));
+server.registerPrompt(
+  "check-messages",
+  {
+    description: "Check your postino inbox for new messages and broadcasts",
+  },
+  async () => ({
+    messages: [
+      {
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text: "Check my postino inbox for new messages and broadcasts. Use msg_whoami, msg_read, and msg_ack to process activity safely.",
+        },
+      },
+    ],
+  }),
+);
 
-server.registerPrompt("send-message", {
-  description: "Send a message to another postino agent",
-  argsSchema: {
-    to: { type: "string", description: "Target agent name" },
-    body: { type: "string", description: "Message content" },
-  } as any,
-}, async (args: any) => ({
-  messages: [{
-    role: "user" as const,
-    content: {
-      type: "text" as const,
-      text: `Send a message to "${args.to}" with the following content: ${args.body}`,
-    },
-  }],
-}));
+server.registerPrompt(
+  "send-message",
+  {
+    description: "Send a message to another postino agent",
+    argsSchema: {
+      to: { type: "string", description: "Target agent name" },
+      body: { type: "string", description: "Message content" },
+    } as any,
+  },
+  async (args: any) => ({
+    messages: [
+      {
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text: `Send a message to "${args.to}" with the following content: ${args.body}`,
+        },
+      },
+    ],
+  }),
+);
 
 function subscribeGuiTakeover(): void {
   const channel = keys.guiTakeoverChannel();
 
   valkeySub.subscribe(channel).catch(() => {
-    process.stderr.write("postino: failed to subscribe to GUI takeover channel\n");
+    process.stderr.write(
+      "postino: failed to subscribe to GUI takeover channel\n",
+    );
   });
 
   valkeySub.on("message", (ch: string, message: string) => {
@@ -156,46 +201,61 @@ async function main(): Promise<void> {
     await connect();
   } catch (err) {
     const url = config.valkeyUrl;
-    process.stderr.write(`\n  postino: cannot connect to Valkey/Redis at ${url}\n\n`);
-    process.stderr.write(`  Postino requires Valkey or Redis. Start one with:\n\n`);
-    process.stderr.write(`    docker run -d --name valkey -p 6379:6379 valkey/valkey:8\n\n`);
+    process.stderr.write(
+      `\n  postino: cannot connect to Valkey/Redis at ${url}\n\n`,
+    );
+    process.stderr.write(
+      `  Postino requires Valkey or Redis. Start one with:\n\n`,
+    );
+    process.stderr.write(
+      `    docker run -d --name valkey -p 6379:6379 valkey/valkey:8\n\n`,
+    );
     process.stderr.write(`  Or install natively:\n\n`);
-    process.stderr.write(`    macOS:  brew install valkey && brew services start valkey\n`);
+    process.stderr.write(
+      `    macOS:  brew install valkey && brew services start valkey\n`,
+    );
     process.stderr.write(`    Linux:  apt install valkey-server\n\n`);
     process.stderr.write(`  To use a different host/port:\n\n`);
     process.stderr.write(`    POSTINO_VALKEY_URL=redis://host:port\n\n`);
     process.exit(1);
   }
 
-  await registerAgent(config.agentName);
+  await registerAgent(config.agentName, instanceId);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   if (config.webEnabled) {
-    startWebServer(config.webPort);
+    await startWebServer(config.webPort);
     subscribeGuiTakeover();
   }
 
   process.stderr.write(`postino agent: ${config.agentName}\n`);
 
+  let stopping = false;
   const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
     // If this instance had a GUI, notify others so they can take over the port
     const state = getGuiState();
     if (state.running && state.port !== null) {
       try {
+        await stopWebServer();
         await valkey.publish(
           keys.guiTakeoverChannel(),
-          JSON.stringify({ port: state.port })
+          JSON.stringify({ port: state.port }),
         );
       } catch {
         // Best-effort, connection may already be closing
       }
     }
 
-    await deregisterAgent(config.agentName);
-    await disconnect();
-    process.exit(0);
+    try {
+      await deregisterAgent(currentAgentName, instanceId);
+    } finally {
+      await disconnect().catch(() => {});
+      process.exit(0);
+    }
   };
 
   process.on("SIGINT", shutdown);

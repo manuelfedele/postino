@@ -1,6 +1,6 @@
 {
   "name": "@manuelfedele/postino",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Agent-to-agent messaging and broadcast system with MCP and HTTP interfaces",
   "type": "module",
   "main": "dist/index.js",
@@ -8,7 +8,7 @@
     "postino": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc && cp -r src/web/public dist/web/",
+    "build": "node scripts/build.mjs",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "test": "vitest run",
@@ -33,7 +33,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.13",
+    "@hono/node-server": "^2.1.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "hono": "^4.12.12",
     "ioredis": "^5.10.1",

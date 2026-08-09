@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import "./setup.js";
-import { connect, disconnect, valkey, keys, registerAgent, deregisterAgent } from "../src/valkey.js";
+import {
+  connect,
+  disconnect,
+  valkey,
+  keys,
+  registerAgent,
+  deregisterAgent,
+} from "../src/valkey.js";
 import { api } from "../src/web/api.js";
 import { Hono } from "hono";
 
@@ -45,10 +52,10 @@ describe("messages API", () => {
     });
 
     const { body } = await req("/messages/reader");
-    expect(body).toHaveLength(2);
-    expect(body[0].from).toBe("writer");
-    expect(body[0].body).toBe("msg1");
-    expect(body[1].body).toBe("msg2");
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0].from).toBe("writer");
+    expect(body.items[0].body).toBe("msg1");
+    expect(body.items[1].body).toBe("msg2");
   });
 
   it("DELETE /messages/:inbox clears inbox", async () => {
@@ -57,11 +64,58 @@ describe("messages API", () => {
       body: JSON.stringify({ to: "cleaner", from: "x", body: "bye" }),
     });
 
-    const { body: delResult } = await req("/messages/cleaner", { method: "DELETE" });
+    const { body: delResult } = await req("/messages/cleaner", {
+      method: "DELETE",
+    });
     expect(delResult.ok).toBe(true);
 
     const { body: msgs } = await req("/messages/cleaner");
-    expect(msgs).toHaveLength(0);
+    expect(msgs.items).toHaveLength(0);
+  });
+
+  it("leases and acknowledges messages without losing them", async () => {
+    await req("/messages", {
+      method: "POST",
+      headers: { "Idempotency-Key": "lease-1" },
+      body: JSON.stringify({
+        to: "lease-reader",
+        from: "sender",
+        body: "process me",
+      }),
+    });
+
+    const leased = await req("/messages/lease-reader/read", {
+      method: "POST",
+      headers: { "X-Postino-Consumer": "worker-1" },
+      body: JSON.stringify({ limit: 10 }),
+    });
+    expect(leased.body.items).toHaveLength(1);
+    expect(leased.body.items[0].receipt).toBe("lease-1");
+
+    const acked = await req("/messages/lease-reader/ack", {
+      method: "POST",
+      headers: { "X-Postino-Consumer": "worker-1" },
+      body: JSON.stringify({ ids: ["lease-1"] }),
+    });
+    expect(acked.body.acknowledged).toEqual(["lease-1"]);
+    expect((await req("/messages/lease-reader")).body.items).toHaveLength(0);
+  });
+
+  it("does not duplicate idempotent sends", async () => {
+    const payload = { to: "dedupe-reader", from: "sender", body: "once" };
+    const first = await req("/messages", {
+      method: "POST",
+      headers: { "Idempotency-Key": "same-message" },
+      body: JSON.stringify(payload),
+    });
+    const second = await req("/messages", {
+      method: "POST",
+      headers: { "Idempotency-Key": "same-message" },
+      body: JSON.stringify(payload),
+    });
+    expect(first.body.created).toBe(true);
+    expect(second.body.created).toBe(false);
+    expect((await req("/messages/dedupe-reader")).body.items).toHaveLength(1);
   });
 });
 
@@ -86,8 +140,10 @@ describe("broadcasts API", () => {
     });
 
     const { body } = await req("/broadcasts");
-    expect(body.length).toBeGreaterThanOrEqual(2);
-    expect(body.some((b: { body: string }) => b.body === "first")).toBe(true);
+    expect(body.items.length).toBeGreaterThanOrEqual(2);
+    expect(body.items.some((b: { body: string }) => b.body === "first")).toBe(
+      true,
+    );
   });
 
   it("DELETE /broadcasts clears all", async () => {
@@ -99,7 +155,7 @@ describe("broadcasts API", () => {
     await req("/broadcasts", { method: "DELETE" });
 
     const { body } = await req("/broadcasts");
-    expect(body).toHaveLength(0);
+    expect(body.items).toHaveLength(0);
   });
 });
 
@@ -113,7 +169,9 @@ describe("agents API", () => {
     });
 
     const { body } = await req("/agents");
-    const agent = body.find((a: { name: string }) => a.name === "online-agent");
+    const agent = body.items.find(
+      (a: { name: string }) => a.name === "online-agent",
+    );
     expect(agent).toBeDefined();
     expect(agent.online).toBe(true);
     expect(agent.messageCount).toBe(1);
@@ -145,13 +203,18 @@ describe("check API", () => {
     // Clear broadcasts first
     await req("/broadcasts", { method: "DELETE" });
 
-    await req("/broadcasts", {
+    const created = await req("/broadcasts", {
       method: "POST",
       body: JSON.stringify({ body: "bc1" }),
     });
 
     // Set cursor to mark as seen
-    await valkey.set(keys.broadcastCursor("seen-agent"), "1", "EX", 100);
+    await valkey.set(
+      keys.broadcastCursor("seen-agent"),
+      created.body.id,
+      "EX",
+      100,
+    );
 
     const { body } = await req("/check/seen-agent");
     expect(body.unseenBroadcasts).toBe(0);

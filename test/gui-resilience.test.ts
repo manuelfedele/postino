@@ -1,13 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import "./setup.js";
 import { valkey, valkeySub, keys, connect, disconnect } from "../src/valkey.js";
-import { getGuiState, restartOnPort } from "../src/web/server.js";
+import {
+  getGuiState,
+  restartOnPort,
+  stopWebServer,
+} from "../src/web/server.js";
 
 beforeAll(async () => {
   await connect();
 });
 
 afterAll(async () => {
+  await stopWebServer();
   await disconnect();
 });
 
@@ -99,7 +104,7 @@ describe("web server restart", () => {
     const net = await import("node:net");
     const blocker = net.createServer();
     await new Promise<void>((resolve) => {
-      blocker.listen(blockedPort, () => resolve());
+      blocker.listen(blockedPort, "127.0.0.1", () => resolve());
     });
 
     try {

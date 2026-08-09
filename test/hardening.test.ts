@@ -24,6 +24,13 @@ async function req(path: string, opts: RequestInit = {}) {
 }
 
 describe("input validation", () => {
+  it("rejects malformed JSON and invalid pagination", async () => {
+    const malformed = await req("/messages", { method: "POST", body: "{" });
+    expect(malformed.status).toBe(400);
+    const invalidPage = await req("/messages/reader?limit=0");
+    expect(invalidPage.status).toBe(400);
+  });
+
   it("rejects empty agent name in POST /messages", async () => {
     const { status, body } = await req("/messages", {
       method: "POST",
@@ -68,7 +75,11 @@ describe("input validation", () => {
   it("rejects oversized message body (> 32KB)", async () => {
     const { status } = await req("/messages", {
       method: "POST",
-      body: JSON.stringify({ to: "target", from: "sender", body: "x".repeat(32769) }),
+      body: JSON.stringify({
+        to: "target",
+        from: "sender",
+        body: "x".repeat(32769),
+      }),
     });
     expect(status).toBe(400);
   });
@@ -97,7 +108,13 @@ describe("inbox size limits", () => {
     for (let i = 0; i < 5; i++) {
       await valkey.rpush(
         keys.inbox(inbox),
-        JSON.stringify({ id: `m${i}`, from: "x", to: inbox, body: `msg-${i}`, timestamp: new Date().toISOString() })
+        JSON.stringify({
+          id: `m${i}`,
+          from: "x",
+          to: inbox,
+          body: `msg-${i}`,
+          timestamp: new Date().toISOString(),
+        }),
       );
     }
 
@@ -111,7 +128,7 @@ describe("inbox size limits", () => {
     expect(status).toBe(200);
 
     const { body } = await req(`/messages/${inbox}`);
-    expect(body.length).toBe(6); // 5 + 1, all within default 1000 limit
+    expect(body.items.length).toBe(6); // 5 + 1, all within default 1000 limit
   });
 });
 
@@ -148,8 +165,12 @@ describe("broadcast TTL filtering", () => {
 
     const { body } = await req("/broadcasts");
     // Expired one should be filtered out
-    expect(body.every((b: { body: string }) => b.body !== "ancient")).toBe(true);
-    expect(body.some((b: { body: string }) => b.body === "fresh")).toBe(true);
+    expect(
+      body.items.every((b: { body: string }) => b.body !== "ancient"),
+    ).toBe(true);
+    expect(body.items.some((b: { body: string }) => b.body === "fresh")).toBe(
+      true,
+    );
   });
 });
 

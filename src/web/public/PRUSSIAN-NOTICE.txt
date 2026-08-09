@@ -1,0 +1,3 @@
+Postino bundles the compiled Prussian UI blueprint and its token definition for
+the web interface. The copied design-system material is distributed under the
+ISC license. Postino's application code remains MIT licensed.
