@@ -254,7 +254,7 @@ npm test
 
 Tests require Valkey or Redis on `localhost:6379`.
 
-GitHub releases and NPM publication are created from `v*` tags after CI passes. NPM uses trusted publishing through GitHub OIDC, so the npm package must be configured with this repository's `release.yml` workflow as its trusted publisher. The workflow also supports manual dispatch for an existing tag.
+GitHub releases and NPM publication are created from `v*` tags after CI passes. NPM uses trusted publishing through GitHub OIDC. In the package's npm Settings -> Trusted Publisher, select GitHub Actions and configure organization/user `manuelfedele`, repository `postino`, workflow filename `release.yml`, no environment, and allow `npm publish`. The workflow also supports manual dispatch for an existing tag.
 
 ### Project structure
 
