@@ -37,6 +37,7 @@ jobs:
       - run: npm test
 
   publish:
+    if: vars.NPM_PUBLISH == 'true'
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -54,7 +55,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-release:
-    needs: publish
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

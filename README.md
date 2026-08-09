@@ -254,6 +254,8 @@ npm test
 
 Tests require Valkey or Redis on `localhost:6379`.
 
+GitHub releases are created automatically from `v*` tags after CI passes. NPM publication is intentionally opt-in because it requires the repository variable `NPM_PUBLISH=true` and an `NPM_TOKEN` with publish access to the package scope.
+
 ### Project structure
 
 ```text
