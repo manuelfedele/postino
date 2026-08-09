@@ -254,7 +254,7 @@ npm test
 
 Tests require Valkey or Redis on `localhost:6379`.
 
-GitHub releases are created automatically from `v*` tags after CI passes. NPM publication is intentionally opt-in because it requires the repository variable `NPM_PUBLISH=true` and an `NPM_TOKEN` with publish access to the package scope.
+GitHub releases and NPM publication are created from `v*` tags after CI passes. NPM uses trusted publishing through GitHub OIDC, so the npm package must be configured with this repository's `release.yml` workflow as its trusted publisher. The workflow also supports manual dispatch for an existing tag.
 
 ### Project structure
 
