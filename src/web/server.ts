@@ -23,6 +23,7 @@ function findPublicFile(filename: string): string | null {
 }
 
 const MIME: Record<string, string> = {
+  ".css": "text/css",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
@@ -37,20 +38,25 @@ app.use("/*", cors());
 app.route("/api", api);
 
 // Serve static files (favicon, logo, etc.)
-app.get("/:file{.+\\.(svg|png|ico|json)$}", (c) => {
+app.get("/:file{.+\\.(css|svg|png|ico|json)$}", (c) => {
   const file = c.req.param("file");
   const filePath = findPublicFile(file);
   if (!filePath) return c.notFound();
   const ext = file.substring(file.lastIndexOf("."));
   const content = readFileSync(filePath);
-  return c.body(content, { headers: { "Content-Type": MIME[ext] || "application/octet-stream" } });
+  return c.body(content, {
+    headers: { "Content-Type": MIME[ext] || "application/octet-stream" },
+  });
 });
 
 // Serve the GUI
 app.get("/", (c) => {
   const htmlPath = findPublicFile("index.html");
   if (!htmlPath) {
-    return c.text("GUI not found. Make sure index.html is in the web/public directory.", 500);
+    return c.text(
+      "GUI not found. Make sure index.html is in the web/public directory.",
+      500,
+    );
   }
   const html = readFileSync(htmlPath, "utf-8");
   return c.html(html);
@@ -79,11 +85,15 @@ export function startWebServer(port: number, attempt = 0): void {
     });
     server.on("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "EADDRINUSE" && attempt < MAX_PORT_ATTEMPTS) {
-        process.stderr.write(`postino: port ${port} in use, trying ${port + 1}...\n`);
+        process.stderr.write(
+          `postino: port ${port} in use, trying ${port + 1}...\n`,
+        );
         startWebServer(port + 1, attempt + 1);
       } else {
         process.stderr.write(`postino GUI failed to start: ${err.message}\n`);
-        process.stderr.write(`MCP tools are still available, but the web GUI is not.\n`);
+        process.stderr.write(
+          `MCP tools are still available, but the web GUI is not.\n`,
+        );
       }
     });
   } catch (err) {
@@ -99,7 +109,9 @@ export function restartOnPort(port: number): Promise<boolean> {
         const oldServer = currentServer;
         currentServer = server;
         currentPort = port;
-        process.stderr.write(`postino GUI: takeover http://localhost:${port}\n`);
+        process.stderr.write(
+          `postino GUI: takeover http://localhost:${port}\n`,
+        );
         if (oldServer) {
           oldServer.close();
         }
@@ -107,7 +119,9 @@ export function restartOnPort(port: number): Promise<boolean> {
       });
       server.on("error", (err: NodeJS.ErrnoException) => {
         if (err.code === "EADDRINUSE") {
-          process.stderr.write(`postino: takeover port ${port} already claimed\n`);
+          process.stderr.write(
+            `postino: takeover port ${port} already claimed\n`,
+          );
         } else {
           process.stderr.write(`postino: takeover failed: ${err.message}\n`);
         }

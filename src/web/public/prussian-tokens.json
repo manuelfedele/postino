@@ -1,0 +1,150 @@
+{
+  "$name": "Prussian",
+  "$description": "Unbranded dark technical design system. Prussian-blue ground, amber accent, engineering-drawing structure. No corporate identity: retheme by editing this file.",
+  "$version": "1.0.0",
+  "$validated": {
+    "tool": "dataviz/scripts/validate_palette.js",
+    "date": "2026-07-25",
+    "categoricalOrder": "amber > teal > violet > lime > magenta > azure > salmon",
+    "worstAdjacentCvdDeltaE": 12.6,
+    "worstAdjacentNormalDeltaE": 20.8,
+    "allPairsSeriesCap": 3,
+    "surfaces": ["#0F1E2C", "#0B1622"]
+  },
+
+  "color": {
+    "surface": {
+      "ground":  { "value": "#0B1622", "comment": "page plane, deepest" },
+      "panel":   { "value": "#0F1E2C", "comment": "default card/panel; the chart surface" },
+      "raised":  { "value": "#132738", "comment": "table headers, inset wells" },
+      "overlay": { "value": "#16304A", "comment": "popovers, tooltips, menus" }
+    },
+    "rule": {
+      "hairline": { "value": "#1E3547", "comment": "1px internal divider, 1.33:1 (decorative)" },
+      "strong":   { "value": "#2C4B63", "comment": "panel edge, control border, 1.85:1" },
+      "focus":    { "value": "#E8A33D", "comment": "focus ring; never rely on color alone" }
+    },
+    "ink": {
+      "primary":   { "value": "#DCE8F0", "comment": "13.56:1 on panel" },
+      "secondary": { "value": "#9DB4C7", "comment": "7.88:1 on panel" },
+      "muted":     { "value": "#6F8CA3", "comment": "4.79:1 on panel; axis labels, captions" },
+      "onAccent":  { "value": "#0B1622", "comment": "text on an amber fill" }
+    },
+    "accent": {
+      "base":   { "value": "#E8A33D", "comment": "accent amber, 7.84:1 on panel. UI only, NOT a series color" },
+      "hover":  { "value": "#F0B45C" },
+      "dim":    { "value": "#8A6321", "comment": "de-emphasised accent, borders" },
+      "wash":   { "value": "rgba(232,163,61,0.14)", "comment": "selected-row tint" }
+    },
+    "status": {
+      "$comment": "Reserved. Never reused as a series color. Always ship with icon + label.",
+      "good":     { "value": "#3FB27F", "comment": "6.35:1 on panel" },
+      "warning":  { "value": "#D6C43C", "comment": "9.51:1 on panel. Yellow, deliberately shifted off the accent amber (deltaE 8.6) so an accent never reads as a warning" },
+      "serious":  { "value": "#E8763D", "comment": "5.71:1 on panel" },
+      "critical": { "value": "#E2555B", "comment": "4.58:1 on panel" }
+    },
+    "series": {
+      "$comment": "Fixed order, never cycled. An 8th series folds into Other or facets. All-pairs forms (scatter, bubble, choropleth) cap at the FIRST THREE slots.",
+      "1": { "value": "#c68206", "hue": "amber",   "comment": "5.31:1" },
+      "2": { "value": "#0baa92", "hue": "teal",    "comment": "5.78:1; deltaE 4.5 from status-good, so pair with icon+label near status" },
+      "3": { "value": "#9b7be9", "hue": "violet",  "comment": "5.15:1" },
+      "4": { "value": "#75a322", "hue": "lime",    "comment": "5.65:1" },
+      "5": { "value": "#d863a0", "hue": "magenta", "comment": "5.00:1" },
+      "6": { "value": "#1899ec", "hue": "azure",   "comment": "5.48:1" },
+      "7": { "value": "#e36650", "hue": "salmon",  "comment": "5.06:1; last on purpose, deltaE 4.1 from status-critical" }
+    },
+    "sequential": {
+      "$comment": "One hue (amber, h=72), light to dark. Full range for continuous magnitude. For ORDINAL use the 5 validated steps in sequentialOrdinal.",
+      "100": { "value": "#fedfb9" },
+      "150": { "value": "#fec57e" },
+      "200": { "value": "#fea91e" },
+      "250": { "value": "#e69812" },
+      "300": { "value": "#ce8703" },
+      "350": { "value": "#b6770b" },
+      "400": { "value": "#9f6700" },
+      "450": { "value": "#875806" },
+      "500": { "value": "#724800" },
+      "550": { "value": "#5c3a02" },
+      "600": { "value": "#482c00" }
+    },
+    "sequentialOrdinal": {
+      "$comment": "Validated ordinal ramp: monotone L, adjacent deltaL >= 0.12, light end 2.13:1 on panel. Use these exact 5 for discrete ordered marks.",
+      "value": ["#fedfb9", "#fea91e", "#ce8703", "#9f6700", "#724800"]
+    },
+    "diverging": {
+      "$comment": "azure <-> salmon-red with a NEUTRAL gray midpoint. Cool/warm poles read as opposite; the midpoint must not be a hue.",
+      "coolStrong": { "value": "#0d6fb0" },
+      "cool":       { "value": "#1899ec" },
+      "coolWeak":   { "value": "#7dc0f2" },
+      "mid":        { "value": "#3A4A58" },
+      "warmWeak":   { "value": "#f0a39f" },
+      "warm":       { "value": "#e36650" },
+      "warmStrong": { "value": "#b03a37" }
+    },
+    "chart": {
+      "gridline": { "value": "#1E3547", "comment": "hairline, recessive" },
+      "axis":     { "value": "#2C4B63" },
+      "surface":  { "value": "#0F1E2C", "comment": "what the validator was run against" }
+    }
+  },
+
+  "typography": {
+    "family": {
+      "display": { "value": "Copperplate, 'Copperplate Gothic Light', 'Trajan Pro', serif", "comment": "eyebrows and page titles ONLY, always uppercase + tracked. Never body copy." },
+      "mono":    { "value": "Menlo, Monaco, 'SF Mono', 'Cascadia Mono', monospace", "comment": "all data, values, identifiers, code, table cells" },
+      "sans":    { "value": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", "comment": "prose, help text, descriptions" }
+    },
+    "size": {
+      "eyebrow":  { "value": "11px",   "tracking": "0.26em", "transform": "uppercase" },
+      "micro":    { "value": "9.5px",  "tracking": "0.07em" },
+      "caption":  { "value": "10.5px", "tracking": "0.11em" },
+      "body":     { "value": "11.5px", "tracking": "0.03em" },
+      "prose":    { "value": "14px",   "tracking": "0" },
+      "title":    { "value": "31px",   "tracking": "0.16em", "transform": "uppercase" },
+      "figure":   { "value": "27px",   "tracking": "-0.01em", "comment": "stat-tile value" },
+      "figureLg": { "value": "44px",   "tracking": "-0.02em", "comment": "hero number" }
+    },
+    "weight": { "regular": { "value": "400" }, "medium": { "value": "500" }, "bold": { "value": "600" } },
+    "leading": { "tight": { "value": "1.25" }, "normal": { "value": "1.5" }, "relaxed": { "value": "1.75" } }
+  },
+
+  "space": {
+    "$comment": "Loose 4px base. The odd values are intentional: they came from the reference build and keep the hairline grid from doubling up.",
+    "0": { "value": "0" },   "1": { "value": "4px" },  "2": { "value": "7px" },
+    "3": { "value": "11px" }, "4": { "value": "15px" }, "5": { "value": "22px" },
+    "6": { "value": "30px" }, "7": { "value": "44px" }, "8": { "value": "60px" }
+  },
+
+  "size": {
+    "gridUnit":  { "value": "56px", "comment": "engineering-drawing backdrop pitch" },
+    "cellHeight":{ "value": "44px" },
+    "cellMinW":  { "value": "112px" },
+    "rowHeadW":  { "value": "214px" },
+    "railW":     { "value": "330px", "comment": "control rail" },
+    "contentMax":{ "value": "1560px" },
+    "markerMin": { "value": "8px", "comment": "dataviz floor for scatter markers" },
+    "strokeData":{ "value": "2px", "comment": "line-series stroke" },
+    "dataEndRadius": { "value": "4px", "comment": "rounded bar end, baseline stays square" },
+    "fillGap":   { "value": "2px", "comment": "surface-colored gap between adjacent fills" }
+  },
+
+  "border": {
+    "radius": {
+      "$comment": "Zero radius on containers is the Prussian signature. Radius exists ONLY on data ends and pills.",
+      "none": { "value": "0" }, "data": { "value": "4px" }, "pill": { "value": "999px" }
+    },
+    "width": { "hairline": { "value": "1px" }, "focus": { "value": "2px" } }
+  },
+
+  "motion": {
+    "$comment": "All of it is optional; every value must be gated behind prefers-reduced-motion.",
+    "duration": { "instant": { "value": "140ms" }, "base": { "value": "180ms" }, "reveal": { "value": "300ms" } },
+    "easing": { "standard": { "value": "cubic-bezier(0.2, 0.9, 0.3, 1)" }, "linear": { "value": "linear" } }
+  },
+
+  "texture": {
+    "$comment": "The accessibility channel. 45deg for one polarity, 135deg for its mirror. Triggered by forced-colors, print, or an explicit setting. Never decorative.",
+    "hatch45":  { "value": "repeating-linear-gradient(45deg, #1E3547 0 1px, transparent 1px 6px)" },
+    "hatch135": { "value": "repeating-linear-gradient(135deg, #1E3547 0 1px, transparent 1px 6px)" }
+  }
+}

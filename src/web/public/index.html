@@ -1,301 +1,450 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>postino</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<style>
-  :root {
-    --bg: #fafafa; --bg2: #fff; --bg3: #f4f4f5; --bg-hover: #e9e9ec;
-    --text: #18181b; --text2: #71717a; --text3: #a1a1aa;
-    --accent: #2563eb; --accent-hover: #1d4ed8; --accent-bg: #eff6ff;
-    --amber: #d97706; --amber-bg: #fffbeb; --amber-border: #fde68a;
-    --green: #059669; --red: #dc2626; --red-bg: #fef2f2;
-    --border: #e4e4e7; --radius: 10px;
-    --mono: 'SF Mono','Cascadia Code','Fira Code','Consolas',monospace;
-    --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    --t: 150ms ease;
-  }
-  @media(prefers-color-scheme:dark){:root{
-    --bg:#09090b;--bg2:#18181b;--bg3:#27272a;--bg-hover:#323236;
-    --text:#fafafa;--text2:#a1a1aa;--text3:#52525b;
-    --accent:#3b82f6;--accent-hover:#60a5fa;--accent-bg:#172554;
-    --amber:#fbbf24;--amber-bg:#422006;--amber-border:#78350f;
-    --green:#34d399;--red:#f87171;--red-bg:#450a0a;
-    --border:#3f3f46;
-  }}
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
-  body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.5;overflow:hidden}
-  ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--text3);border-radius:3px}
-
-  /* Full-height app shell */
-  .app{display:flex;flex-direction:column;height:100vh;max-width:1100px;margin:0 auto;padding:0 20px}
-
-  /* Header bar */
-  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);flex-shrink:0;gap:8px}
-  .logo{display:flex;align-items:center;gap:8px}
-  .logo h1{font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:-0.5px}
-  .pill{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:20px}
-  .pill-muted{color:var(--text3);background:var(--bg3)}
-  .pill-accent{color:var(--accent);background:var(--accent-bg)}
-  .meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);font-family:var(--mono)}
-  .meta .sep{color:var(--border)}
-  .dot{width:6px;height:6px;border-radius:50%;display:inline-block}
-  .dot-on{background:var(--green)}.dot-off{background:var(--red)}
-
-  /* Tabs row */
-  .tabs{display:flex;gap:2px;padding:8px 0;flex-shrink:0}
-  .tab{padding:6px 14px;font-size:13px;font-weight:500;font-family:var(--sans);border:none;background:none;color:var(--text2);cursor:pointer;border-radius:6px;transition:all var(--t)}
-  .tab:hover{color:var(--text);background:var(--bg3)}
-  .tab.active{color:var(--text);background:var(--bg3);font-weight:600}
-  .badge{font-size:10px;font-weight:700;padding:1px 5px;border-radius:8px;color:#fff;margin-left:4px;vertical-align:middle}
-  .badge-blue{background:var(--accent)}.badge-amber{background:var(--amber)}
-  .badge:empty{display:none}
-
-  /* Panels fill remaining space */
-  .panel{display:none;flex:1;min-height:0;padding-bottom:12px}
-  .panel.active{display:flex}
-
-  /* ===== MESSAGES PANEL ===== */
-  .msg-panel{gap:12px}
-
-  /* Sidebar */
-  .sidebar{width:220px;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg2);overflow:hidden;flex-shrink:0}
-  .sidebar-header{padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px}
-  .sidebar-header input{flex:1;padding:6px 8px;font-size:12px;min-width:0}
-  .sidebar-header button{padding:6px 10px;font-size:12px}
-  .sidebar-list{flex:1;overflow-y:auto}
-
-  .inbox-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background var(--t);gap:6px}
-  .inbox-item:last-child{border-bottom:none}
-  .inbox-item:hover{background:var(--bg-hover)}
-  .inbox-item.active{background:var(--accent);color:#fff}
-  .inbox-item.active .inbox-count{background:rgba(255,255,255,0.25)}
-  .inbox-item.active .me-tag{color:#fff;background:rgba(255,255,255,0.2)}
-  .inbox-item.active .odot{background:#fff}
-  .inbox-left{display:flex;align-items:center;gap:6px;min-width:0}
-  .inbox-left span{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .odot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
-  .odot-on{background:var(--green)}.odot-off{background:var(--text3)}
-  .inbox-count{font-size:10px;font-family:var(--mono);font-weight:700;padding:0 5px;border-radius:8px;background:var(--bg3);flex-shrink:0}
-  .me-tag{font-size:9px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:1px 4px;border-radius:3px;flex-shrink:0}
-
-  /* Thread area */
-  .thread{flex:1;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg2);overflow:hidden;min-width:0}
-  .thread-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
-  .thread-hdr h3{font-size:13px;font-family:var(--mono);font-weight:500}
-  .thread-body{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
-  .thread-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px}
-
-  .msg{padding:8px 12px;border-radius:8px;background:var(--bg3)}
-  .msg-meta{display:flex;align-items:center;gap:6px;margin-bottom:2px}
-  .msg-from{font-size:11px;font-family:var(--mono);font-weight:600;color:var(--accent)}
-  .msg-time{font-size:10px;font-family:var(--mono);color:var(--text3)}
-  .msg-body{font-size:13px;white-space:pre-wrap;word-break:break-word}
-
-  .compose{display:none;padding:8px 10px;border-top:1px solid var(--border);gap:6px;flex-shrink:0}
-  .compose.visible{display:flex}
-  .compose input{flex:1;padding:6px 10px;font-size:12px}
-  .compose input:first-child{max-width:100px}
-  .compose button{padding:6px 12px;font-size:12px}
-
-  /* ===== BROADCASTS PANEL ===== */
-  .bc-panel{flex-direction:column;gap:12px}
-  .bc-form{display:flex;gap:8px;flex-shrink:0}
-  .bc-form input{flex:1;padding:8px 12px;font-size:13px}
-  .bc-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
-  .bc-item{padding:10px 14px;border-radius:var(--radius);background:var(--amber-bg);border:1px solid var(--amber-border)}
-  .bc-meta{display:flex;align-items:center;gap:6px;margin-bottom:2px}
-  .bc-from{font-size:11px;font-family:var(--mono);font-weight:600;color:var(--amber)}
-  .bc-body{font-size:13px;white-space:pre-wrap;word-break:break-word}
-
-  /* Shared */
-  input{font-family:var(--mono);font-size:13px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);outline:none;transition:border-color var(--t),box-shadow var(--t)}
-  input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.12)}
-  input::placeholder{color:var(--text3)}
-  .btn{font-family:var(--sans);font-size:13px;font-weight:500;padding:8px 14px;border:none;border-radius:6px;cursor:pointer;transition:all var(--t);white-space:nowrap}
-  .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-hover)}
-  .btn-amber{background:var(--amber);color:#fff}.btn-amber:hover{opacity:.9}
-  .btn-danger{background:none;color:var(--red)}.btn-danger:hover{background:var(--red-bg)}
-  .empty{padding:40px;text-align:center;color:var(--text3);font-size:13px}
-
-  /* Toast */
-  .toast-box{position:fixed;bottom:16px;right:16px;display:flex;flex-direction:column;gap:6px;z-index:200}
-  .toast{padding:8px 14px;border-radius:6px;font-size:12px;font-family:var(--sans);background:var(--bg2);color:var(--text);border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.15);animation:t-in .2s ease;max-width:280px}
-  .toast-ok{border-left:3px solid var(--green)}.toast-info{border-left:3px solid var(--accent)}
-  @keyframes t-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-  @media(max-width:700px){
-    .sidebar{width:100%}
-    .msg-panel{flex-direction:column}
-    .topbar{flex-wrap:wrap}
-  }
-</style>
+<meta name="theme-color" content="#0B1622">
+<title>Postino / Agent Relay</title>
+<link rel="stylesheet" href="/prussian.css">
+<link rel="stylesheet" href="/postino.css">
 </head>
-<body>
-<div class="app">
+<body class="bp bp-plane">
+<main class="postino-app">
+  <div class="bp-shell">
+    <header class="bp-masthead postino-masthead">
+      <div>
+        <div class="postino-brand">
+          <div class="postino-mark" aria-hidden="true"><span>+</span></div>
+          <span class="bp-label" style="margin:0">POSTINO / AGENT RELAY</span>
+        </div>
+        <p class="bp-eyebrow">Coordination plane</p>
+        <h1 class="bp-title">Message traffic</h1>
+        <p class="bp-masthead-sub">Durable communication across independent agents, processes, and people.</p>
+      </div>
+      <div class="postino-masthead-actions">
+        <span class="bp-status" data-tone="good" id="connection-status">
+          <span class="bp-status-dot" aria-hidden="true"></span>
+          <span>LIVE LINK</span>
+        </span>
+        <span class="bp-tag postino-identity" id="identity-tag">relay / demo</span>
+      </div>
+    </header>
 
-  <!-- Top bar -->
-  <div class="topbar">
-    <div class="logo">
-      <h1>postino</h1>
-      <span class="pill pill-muted" id="version"></span>
-      <span class="pill pill-accent" id="agent-id"></span>
+    <div class="bp-filterbar postino-filterbar" aria-label="Message filters">
+      <label>
+        <span class="bp-label">Find an agent</span>
+        <input class="bp-input" id="agent-search" type="search" placeholder="Search identity..." autocomplete="off">
+      </label>
+      <div class="bp-filterbar-spacer">
+        <span class="bp-filterbar-count" id="last-sync">SYNC / --</span>
+        <button class="bp-btn" id="refresh-btn" type="button">Refresh</button>
+      </div>
     </div>
-    <div class="meta">
-      <span id="stat-agents">-</span>
-      <span class="sep">|</span>
-      <span id="stat-msg">-</span>
-      <span class="sep">|</span>
-      <span id="stat-bc">-</span>
-      <span class="sep">|</span>
-      <span class="dot dot-off" id="status-dot"></span>
-      <span id="status-text">connecting</span>
-    </div>
+
+    <section class="postino-dashboard" aria-label="Postino activity">
+      <div class="bp-cols-4 postino-stat-grid">
+        <div class="bp-stat">
+          <span class="bp-label">Connected agents</span>
+          <span class="bp-stat-value bp-stat-value--accent" id="stat-agents">--</span>
+          <div class="bp-stat-foot"><span class="bp-delta" data-dir="up" data-tone="none">presence heartbeat</span></div>
+        </div>
+        <div class="bp-stat">
+          <span class="bp-label">Queued messages</span>
+          <span class="bp-stat-value" id="stat-messages">--</span>
+          <div class="bp-stat-foot"><span class="bp-delta" data-dir="flat" data-tone="none">direct delivery</span></div>
+        </div>
+        <div class="bp-stat">
+          <span class="bp-label">Active broadcasts</span>
+          <span class="bp-stat-value" id="stat-broadcasts">--</span>
+          <div class="bp-stat-foot"><span class="bp-delta" data-dir="up" data-tone="good">shared channel</span></div>
+        </div>
+        <div class="bp-stat">
+          <span class="bp-label">Message retention</span>
+          <span class="bp-stat-value">24<span class="bp-stat-unit">h</span></span>
+          <div class="bp-stat-foot">Valkey / local store</div>
+        </div>
+      </div>
+
+      <div class="bp-with-rail postino-layout">
+        <aside class="bp-card postino-rail" aria-labelledby="agents-heading">
+          <div class="bp-card-head">
+            <div class="bp-card-head-text">
+              <p class="bp-eyebrow" id="agents-heading">Known identities</p>
+              <p class="bp-help">Select an inbox to inspect the queue.</p>
+            </div>
+            <span class="bp-badge bp-badge--count" data-tone="good" id="online-badge">0</span>
+          </div>
+          <div class="bp-card-body">
+            <div class="postino-agent-list" id="agent-list" aria-live="polite"></div>
+          </div>
+          <div class="bp-card-foot">
+            <span class="bp-status" data-tone="good"><span class="bp-status-dot" aria-hidden="true"></span>Presence tracked</span>
+            <span class="bp-filterbar-spacer" id="agent-count-foot">0 total</span>
+          </div>
+        </aside>
+
+        <section class="bp-card postino-thread" aria-labelledby="thread-heading">
+          <div class="bp-card-head">
+            <div class="bp-card-head-text postino-thread-header">
+              <p class="bp-eyebrow" id="thread-heading">Direct channel</p>
+              <p class="bp-help" id="thread-subtitle">Select an identity</p>
+            </div>
+            <button class="bp-btn" id="clear-inbox-btn" type="button" hidden>Clear queue</button>
+          </div>
+          <div class="bp-card-body">
+            <div class="postino-thread-body" id="thread-body">
+              <div class="postino-empty">Select an identity from the rail<br><span class="bp-micro">INBOX / AWAITING TARGET</span></div>
+            </div>
+          </div>
+          <div class="bp-card-foot postino-message-input">
+            <input class="bp-input" id="message-from" type="text" value="operator" aria-label="Message sender" placeholder="From">
+            <input class="bp-input" id="message-body" type="text" aria-label="Message body" placeholder="Write a message to the selected agent...">
+            <button class="bp-btn bp-btn--primary" id="send-message-btn" type="button" disabled>Send</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="bp-card postino-log" aria-labelledby="activity-heading">
+        <div class="bp-card-head">
+          <div class="bp-card-head-text">
+            <p class="bp-eyebrow" id="activity-heading">Event stream</p>
+            <p class="bp-help">Recent coordination events, newest at the bottom.</p>
+          </div>
+          <span class="bp-status" data-tone="good"><span class="bp-status-dot" aria-hidden="true"></span>tailing</span>
+        </div>
+        <div class="bp-log-frame">
+          <div class="bp-log-view" id="event-stream" role="log" aria-label="Recent coordination events" tabindex="0"></div>
+        </div>
+      </section>
+
+      <section class="bp-card postino-broadcast-panel" aria-labelledby="broadcast-heading">
+        <div class="bp-card-head">
+          <div class="bp-card-head-text">
+            <p class="bp-eyebrow" id="broadcast-heading">Broadcast channel</p>
+            <p class="bp-help">Announcements remain visible to every identity until retention expires.</p>
+          </div>
+          <span class="bp-badge bp-badge--count" data-tone="warning" id="broadcast-badge">0</span>
+        </div>
+        <div class="bp-card-body">
+          <div class="postino-message-input postino-broadcast-input">
+            <input class="bp-input" id="broadcast-from" type="text" value="operator" aria-label="Broadcast sender" placeholder="From">
+            <input class="bp-input" id="broadcast-body" type="text" aria-label="Broadcast body" placeholder="Announce an event to every agent...">
+            <button class="bp-btn bp-btn--primary" id="send-broadcast-btn" type="button">Broadcast</button>
+          </div>
+          <div class="postino-broadcasts" id="broadcast-list"></div>
+        </div>
+      </section>
+    </section>
+
+    <footer class="postino-footer">
+      <span class="bp-micro">POSTINO / LOCAL CONTROL SURFACE</span>
+      <span class="bp-filterbar-spacer"></span>
+      <span class="bp-micro" id="footer-mode">HTTP + MCP / DEMO DATA</span>
+    </footer>
   </div>
-
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab active" data-tab="messages">Messages <span class="badge badge-blue" id="msg-badge"></span></button>
-    <button class="tab" data-tab="broadcasts">Broadcasts <span class="badge badge-amber" id="bc-badge"></span></button>
-  </div>
-
-  <!-- ===== MESSAGES ===== -->
-  <div class="panel msg-panel active" id="panel-messages">
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <input id="new-inbox" type="text" placeholder="New inbox...">
-        <button class="btn btn-primary" id="create-inbox-btn">+</button>
-      </div>
-      <div class="sidebar-list" id="inbox-list">
-        <div class="empty" style="padding:20px">No agents yet</div>
-      </div>
-    </div>
-    <div class="thread">
-      <div class="thread-hdr">
-        <h3 id="thread-title">Select an inbox</h3>
-        <button class="btn btn-danger" id="clear-inbox-btn" style="display:none">Clear</button>
-      </div>
-      <div class="thread-body" id="thread-body">
-        <div class="thread-empty">Select an inbox to view messages</div>
-      </div>
-      <div class="compose" id="msg-compose">
-        <input id="msg-from" type="text" placeholder="From...">
-        <input id="msg-body" type="text" placeholder="Message... (Enter)">
-        <button class="btn btn-primary" id="send-btn">Send</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== BROADCASTS ===== -->
-  <div class="panel bc-panel" id="panel-broadcasts">
-    <div class="bc-form">
-      <input id="bc-body" type="text" placeholder="Broadcast to all agents... (Enter)">
-      <button class="btn btn-amber" id="bc-send-btn">Broadcast</button>
-      <button class="btn btn-danger" id="bc-clear-btn">Clear all</button>
-    </div>
-    <div class="bc-list" id="bc-list">
-      <div class="empty">No broadcasts yet</div>
-    </div>
-  </div>
-
-</div>
-
-<div class="toast-box" id="toasts"></div>
+</main>
 
 <script>
-const API=location.origin+'/api';
-let agents=[],broadcasts=[],activeInbox=null,myAgent=null;
-
-function toast(m,t='info'){const e=document.createElement('div');e.className='toast toast-'+(t==='success'?'ok':t);e.textContent=m;document.getElementById('toasts').appendChild(e);setTimeout(()=>{e.style.opacity='0';setTimeout(()=>e.remove(),200)},3000)}
-
-async function api(p,o={}){try{const r=await fetch(API+p,{headers:{'Content-Type':'application/json'},...o});return r.json()}catch{toast('Connection error');return null}}
-
-// Tabs
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  t.classList.add('active');document.getElementById('panel-'+t.dataset.tab).classList.add('active');
-}));
-
-// Detect self
-async function detectMe(){
-  const r=await api('/agents');if(!r)return;agents=r;
-  const on=agents.filter(a=>a.online);
-  if(on.length===1)myAgent=on[0].name;
-  const el=document.getElementById('agent-id');
-  el.textContent=myAgent||'';el.title=myAgent?'You':'';
-}
-
-// Agents
-async function loadAgents(){const r=await api('/agents');if(!r)return;agents=r;renderInbox();updateBadge()}
-
-function renderInbox(){
-  const l=document.getElementById('inbox-list');
-  if(!agents.length){l.innerHTML='<div class="empty" style="padding:20px">No agents yet</div>';return}
-  l.innerHTML=agents.map(a=>{
-    const me=a.name===myAgent,act=a.name===activeInbox;
-    return`<div class="inbox-item${act?' active':''}" onclick="selInbox('${esc(a.name)}')">
-      <div class="inbox-left"><div class="odot ${a.online?'odot-on':'odot-off'}"></div><span>${esc(a.name)}</span>${me?'<span class="me-tag">you</span>':''}</div>
-      ${a.messageCount>0?`<span class="inbox-count">${a.messageCount}</span>`:''}
-    </div>`}).join('');
-}
-
-function updateBadge(){const t=agents.reduce((s,a)=>s+a.messageCount,0);document.getElementById('msg-badge').textContent=t>0?t:''}
-
-window.selInbox=async function(n){
-  activeInbox=n;renderInbox();
-  document.getElementById('thread-title').textContent=n;
-  document.getElementById('clear-inbox-btn').style.display='';
-  document.getElementById('msg-compose').classList.add('visible');
-  const msgs=await api('/messages/'+encodeURIComponent(n));
-  const b=document.getElementById('thread-body');
-  if(!msgs||!msgs.length){b.innerHTML='<div class="thread-empty">No messages</div>';return}
-  b.innerHTML=msgs.map(m=>`<div class="msg"><div class="msg-meta"><span class="msg-from">${esc(m.from)}</span><span class="msg-time">${fmtT(m.timestamp)}</span></div><div class="msg-body">${esc(m.body)}</div></div>`).join('');
-  b.scrollTop=b.scrollHeight;
+const API = `${location.origin}/api`;
+const params = new URLSearchParams(location.search);
+const demoMode = params.has('demo');
+const state = {
+  agents: [],
+  broadcasts: [],
+  messages: {},
+  activeInbox: null,
+  filter: '',
+  events: [],
 };
 
-document.getElementById('clear-inbox-btn').onclick=async()=>{if(!activeInbox||!confirm('Clear "'+activeInbox+'"?'))return;await api('/messages/'+encodeURIComponent(activeInbox),{method:'DELETE'});toast('Cleared','success');await loadAgents();selInbox(activeInbox)};
+const sampleAgents = [
+  { name: 'orchestrator', messageCount: 2, online: true },
+  { name: 'research', messageCount: 1, online: true },
+  { name: 'builder', messageCount: 0, online: true },
+  { name: 'reviewer', messageCount: 3, online: false },
+  { name: 'release-bot', messageCount: 0, online: true },
+];
 
-document.getElementById('create-inbox-btn').onclick=async()=>{const n=document.getElementById('new-inbox').value.trim();if(!n)return;await api('/messages',{method:'POST',body:JSON.stringify({to:n,from:'system',body:'Inbox created'})});document.getElementById('new-inbox').value='';toast('"'+n+'" created','success');await loadAgents();selInbox(n)};
-document.getElementById('new-inbox').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('create-inbox-btn').click()});
+const sampleMessages = {
+  orchestrator: [
+    { id: 'demo-1', from: 'research', to: 'orchestrator', body: 'The discovery pass is complete. Twelve relevant records are ready for review.', timestamp: '2026-08-09T12:18:00Z' },
+    { id: 'demo-2', from: 'reviewer', to: 'orchestrator', body: 'I am holding the release until the permission matrix is confirmed.', timestamp: '2026-08-09T12:26:00Z' },
+  ],
+  research: [
+    { id: 'demo-3', from: 'orchestrator', to: 'research', body: 'Please send the source summary to the builder when the evidence is grouped.', timestamp: '2026-08-09T12:09:00Z' },
+  ],
+  builder: [],
+  reviewer: [
+    { id: 'demo-4', from: 'release-bot', to: 'reviewer', body: 'A new candidate is available in the staging queue.', timestamp: '2026-08-09T11:58:00Z' },
+    { id: 'demo-5', from: 'orchestrator', to: 'reviewer', body: 'Check the two changed interfaces before approving the handoff.', timestamp: '2026-08-09T12:02:00Z' },
+    { id: 'demo-6', from: 'builder', to: 'reviewer', body: 'Build artifacts are attached to the latest run.', timestamp: '2026-08-09T12:05:00Z' },
+  ],
+  'release-bot': [],
+};
 
-async function sendMsg(){if(!activeInbox)return;const f=document.getElementById('msg-from').value.trim()||'web-ui',b=document.getElementById('msg-body').value.trim();if(!b)return;await api('/messages',{method:'POST',body:JSON.stringify({to:activeInbox,from:f,body:b})});document.getElementById('msg-body').value='';await loadAgents();selInbox(activeInbox)}
-document.getElementById('send-btn').onclick=sendMsg;
-document.getElementById('msg-body').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}});
+const sampleBroadcasts = [
+  { id: 'broadcast-1', from: 'release-bot', body: 'Deployment window opens in 18 minutes. Freeze non-essential writes.', timestamp: '2026-08-09T12:30:00Z' },
+  { id: 'broadcast-2', from: 'orchestrator', body: 'Coordination pass 08 is complete. Reviewers can begin the final sweep.', timestamp: '2026-08-09T12:21:00Z' },
+  { id: 'broadcast-3', from: 'operator', body: 'Welcome to the local relay. This view is populated with sample traffic.', timestamp: '2026-08-09T12:14:00Z' },
+];
 
-// Broadcasts
-async function loadBc(){const r=await api('/broadcasts');if(!r)return;broadcasts=r;renderBc();document.getElementById('bc-badge').textContent=broadcasts.length>0?broadcasts.length:''}
-
-function renderBc(){
-  const l=document.getElementById('bc-list');
-  if(!broadcasts.length){l.innerHTML='<div class="empty">No broadcasts yet</div>';return}
-  l.innerHTML=broadcasts.slice().reverse().map(b=>`<div class="bc-item"><div class="bc-meta"><span class="bc-from">${esc(b.from)}</span><span class="msg-time">${fmtT(b.timestamp)}</span></div><div class="bc-body">${esc(b.body)}</div></div>`).join('');
+function cloneDemoData() {
+  state.agents = sampleAgents.map((agent) => ({ ...agent }));
+  state.broadcasts = sampleBroadcasts.map((broadcast) => ({ ...broadcast }));
+  state.messages = Object.fromEntries(Object.entries(sampleMessages).map(([name, messages]) => [name, messages.map((message) => ({ ...message }))]));
 }
 
-async function sendBc(){const b=document.getElementById('bc-body').value.trim();if(!b)return;await api('/broadcasts',{method:'POST',body:JSON.stringify({body:b})});document.getElementById('bc-body').value='';toast('Broadcast sent','success');await loadBc()}
-document.getElementById('bc-send-btn').onclick=sendBc;
-document.getElementById('bc-body').addEventListener('keydown',e=>{if(e.key==='Enter')sendBc()});
-document.getElementById('bc-clear-btn').onclick=async()=>{if(!confirm('Clear all broadcasts?'))return;await api('/broadcasts',{method:'DELETE'});toast('Cleared','success');await loadBc()};
-
-// SSE
-function connectSSE(){
-  const es=new EventSource(API+'/events'),d=document.getElementById('status-dot'),t=document.getElementById('status-text');
-  es.addEventListener('update',e=>{loadAgents();loadBc();loadStats();try{const x=JSON.parse(e.data);if(x.type==='msg_send'&&x.to===myAgent)toast('Message from '+x.from,'info');if(x.type==='broadcast')toast('Broadcast from '+x.from,'info');if(x.type==='agent_rename')toast(x.oldName+' \u2192 '+x.newName,'info')}catch{}});
-  es.onopen=()=>{d.className='dot dot-on';t.textContent='live'};
-  es.onerror=()=>{d.className='dot dot-off';t.textContent='reconnecting'};
+function esc(value) {
+  const element = document.createElement('div');
+  element.textContent = value == null ? '' : String(value);
+  return element.innerHTML;
 }
 
-async function loadStats(){const s=await api('/stats');if(!s)return;document.getElementById('version').textContent='v'+s.version;document.getElementById('stat-agents').textContent=s.agentCount+' agents';document.getElementById('stat-msg').textContent=s.messageCount+' msg';document.getElementById('stat-bc').textContent=s.broadcastCount+' bc'}
+function formatTime(timestamp) {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
-function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function fmtT(i){try{const d=new Date(i),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}catch{return i}}
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${formatTime(timestamp)}`;
+}
 
-document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(e.key==='1')document.querySelector('[data-tab="messages"]').click();if(e.key==='2')document.querySelector('[data-tab="broadcasts"]').click()});
+function visibleAgents() {
+  const query = state.filter.trim().toLowerCase();
+  return state.agents.filter((agent) => !query || agent.name.toLowerCase().includes(query));
+}
 
-detectMe().then(()=>{loadAgents();loadBc();loadStats();connectSSE()});
+function totalQueuedMessages() {
+  return state.agents.reduce((total, agent) => total + agent.messageCount, 0);
+}
+
+function renderStats() {
+  document.getElementById('stat-agents').textContent = state.agents.filter((agent) => agent.online).length;
+  document.getElementById('stat-messages').textContent = totalQueuedMessages();
+  document.getElementById('stat-broadcasts').textContent = state.broadcasts.length;
+  document.getElementById('online-badge').textContent = state.agents.filter((agent) => agent.online).length;
+  document.getElementById('broadcast-badge').textContent = state.broadcasts.length;
+  document.getElementById('agent-count-foot').textContent = `${state.agents.length} total`;
+  document.getElementById('last-sync').textContent = `SYNC / ${demoMode ? '12:31' : formatTime(new Date().toISOString())}`;
+}
+
+function renderAgents() {
+  const list = document.getElementById('agent-list');
+  const agents = visibleAgents();
+  if (!agents.length) {
+    list.innerHTML = '<div class="bp-empty">No matching identities.</div>';
+    return;
+  }
+  list.innerHTML = agents.map((agent) => `
+    <button class="postino-agent" type="button" data-agent="${esc(agent.name)}" data-active="${agent.name === state.activeInbox}">
+      <span class="bp-status" data-tone="${agent.online ? 'good' : 'warning'}" aria-label="${agent.online ? 'online' : 'offline'}">
+        <span class="bp-status-dot" aria-hidden="true"></span>
+      </span>
+      <span class="postino-agent-name">${esc(agent.name)}</span>
+      ${agent.messageCount ? `<span class="bp-badge bp-badge--count postino-agent-count" data-tone="${agent.online ? 'good' : 'warning'}">${agent.messageCount}</span>` : '<span class="postino-agent-count bp-micro">--</span>'}
+    </button>
+  `).join('');
+  list.querySelectorAll('[data-agent]').forEach((button) => {
+    button.addEventListener('click', () => selectInbox(button.dataset.agent));
+  });
+}
+
+function renderThread() {
+  const body = document.getElementById('thread-body');
+  const title = document.getElementById('thread-subtitle');
+  const clearButton = document.getElementById('clear-inbox-btn');
+  const sendButton = document.getElementById('send-message-btn');
+  const messages = state.activeInbox ? (state.messages[state.activeInbox] || []) : [];
+  title.textContent = state.activeInbox ? `${state.activeInbox} / ${messages.length} queued` : 'Select an identity';
+  clearButton.hidden = !state.activeInbox;
+  sendButton.disabled = !state.activeInbox;
+  if (!state.activeInbox) {
+    body.innerHTML = '<div class="postino-empty">Select an identity from the rail<br><span class="bp-micro">INBOX / AWAITING TARGET</span></div>';
+    return;
+  }
+  if (!messages.length) {
+    body.innerHTML = '<div class="postino-empty">No queued messages<br><span class="bp-micro">INBOX / CLEAR</span></div>';
+    return;
+  }
+  body.innerHTML = messages.map((message) => `
+    <article class="bp-msg" data-role="${message.from === 'operator' ? 'user' : 'assistant'}">
+      <div class="bp-msg-head">
+        <span class="bp-label bp-msg-role">${esc(message.from)}</span>
+        <span class="bp-micro bp-msg-ts">${formatDate(message.timestamp)}</span>
+        <span class="bp-msg-actions bp-micro">DIRECT / ${esc(message.id.slice(-4))}</span>
+      </div>
+      <div class="bp-turn" data-role="${message.from === 'operator' ? 'user' : 'assistant'}">
+        <div class="bp-turn-body">${esc(message.body)}</div>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderBroadcasts() {
+  const list = document.getElementById('broadcast-list');
+  if (!state.broadcasts.length) {
+    list.innerHTML = '<div class="postino-empty">No active broadcasts.</div>';
+    return;
+  }
+  list.innerHTML = state.broadcasts.slice().reverse().map((broadcast) => `
+    <article class="postino-broadcast">
+      <div class="postino-broadcast-head">
+        <span class="bp-label" style="margin:0;color:var(--bp-accent)">${esc(broadcast.from)}</span>
+        <span class="bp-micro">${formatDate(broadcast.timestamp)}</span>
+      </div>
+      <div class="postino-broadcast-body">${esc(broadcast.body)}</div>
+    </article>
+  `).join('');
+}
+
+function renderEvents() {
+  const stream = document.getElementById('event-stream');
+  stream.innerHTML = state.events.map((event) => `
+    <div class="bp-log-row" data-level="${event.level}">
+      <span class="bp-log-gutter" aria-hidden="true"></span>
+      <span class="bp-log-ts">${formatTime(event.timestamp)}</span>
+      <span class="bp-log-text">${esc(event.body)}</span>
+    </div>
+  `).join('');
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function addEvent(body, level = 'info') {
+  state.events.push({ body, level, timestamp: new Date().toISOString() });
+  state.events = state.events.slice(-7);
+  renderEvents();
+}
+
+function render() {
+  renderStats();
+  renderAgents();
+  renderThread();
+  renderBroadcasts();
+  renderEvents();
+}
+
+function selectInbox(name) {
+  state.activeInbox = name;
+  render();
+}
+
+async function request(path, options = {}) {
+  const response = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json' }, ...options });
+  return response.json();
+}
+
+async function refresh() {
+  if (demoMode) {
+    render();
+    addEvent('demo data refreshed / no external store queried', 'debug');
+    return;
+  }
+  try {
+    const [agents, broadcasts, stats] = await Promise.all([request('/agents'), request('/broadcasts'), request('/stats')]);
+    state.agents = agents;
+    state.broadcasts = broadcasts;
+    for (const agent of agents) {
+      const messages = await request(`/messages/${encodeURIComponent(agent.name)}`);
+      state.messages[agent.name] = messages;
+    }
+    document.getElementById('connection-status').dataset.tone = 'good';
+    document.getElementById('connection-status').lastElementChild.textContent = 'LIVE LINK';
+    render();
+    addEvent(`sync complete / ${stats.agentCount} identities / ${stats.messageCount} queued`, 'info');
+  } catch {
+    document.getElementById('connection-status').dataset.tone = 'critical';
+    document.getElementById('connection-status').lastElementChild.textContent = 'LINK LOST';
+    addEvent('storage unavailable / retry when the relay is online', 'error');
+  }
+}
+
+async function sendMessage() {
+  const body = document.getElementById('message-body').value.trim();
+  const from = document.getElementById('message-from').value.trim() || 'operator';
+  if (!state.activeInbox || !body) return;
+  const message = { id: `local-${Date.now()}`, from, to: state.activeInbox, body, timestamp: new Date().toISOString() };
+  if (demoMode) {
+    state.messages[state.activeInbox] = [...(state.messages[state.activeInbox] || []), message];
+    const agent = state.agents.find((item) => item.name === state.activeInbox);
+    if (agent) agent.messageCount += 1;
+  } else {
+    await request('/messages', { method: 'POST', body: JSON.stringify({ to: state.activeInbox, from, body }) });
+    await refresh();
+  }
+  document.getElementById('message-body').value = '';
+  addEvent(`${from} -> ${state.activeInbox} / direct message queued`, 'info');
+  render();
+}
+
+async function sendBroadcast() {
+  const body = document.getElementById('broadcast-body').value.trim();
+  const from = document.getElementById('broadcast-from').value.trim() || 'operator';
+  if (!body) return;
+  const broadcast = { id: `local-${Date.now()}`, from, body, timestamp: new Date().toISOString() };
+  if (demoMode) state.broadcasts.push(broadcast);
+  else {
+    await request('/broadcasts', { method: 'POST', body: JSON.stringify({ from, body }) });
+    await refresh();
+  }
+  document.getElementById('broadcast-body').value = '';
+  addEvent(`${from} / broadcast delivered to all identities`, 'warn');
+  render();
+}
+
+async function clearInbox() {
+  if (!state.activeInbox) return;
+  if (demoMode) {
+    state.messages[state.activeInbox] = [];
+    const agent = state.agents.find((item) => item.name === state.activeInbox);
+    if (agent) agent.messageCount = 0;
+  } else {
+    await request(`/messages/${encodeURIComponent(state.activeInbox)}`, { method: 'DELETE' });
+    await refresh();
+  }
+  addEvent(`${state.activeInbox} / inbox cleared`, 'warn');
+  render();
+}
+
+document.getElementById('agent-search').addEventListener('input', (event) => {
+  state.filter = event.target.value;
+  renderAgents();
+});
+document.getElementById('refresh-btn').addEventListener('click', refresh);
+document.getElementById('send-message-btn').addEventListener('click', sendMessage);
+document.getElementById('send-broadcast-btn').addEventListener('click', sendBroadcast);
+document.getElementById('clear-inbox-btn').addEventListener('click', clearInbox);
+document.getElementById('message-body').addEventListener('keydown', (event) => { if (event.key === 'Enter') sendMessage(); });
+document.getElementById('broadcast-body').addEventListener('keydown', (event) => { if (event.key === 'Enter') sendBroadcast(); });
+
+if (demoMode) {
+  cloneDemoData();
+  document.getElementById('identity-tag').textContent = 'relay / sample';
+  document.getElementById('footer-mode').textContent = 'HTTP + MCP / SAMPLE DATA';
+  state.events = [
+    { body: 'relay online / demo dataset mounted', level: 'info', timestamp: '2026-08-09T12:31:00Z' },
+    { body: 'release-bot announced a deployment window', level: 'warn', timestamp: '2026-08-09T12:30:00Z' },
+    { body: 'orchestrator completed coordination pass 08', level: 'info', timestamp: '2026-08-09T12:21:00Z' },
+    { body: 'reviewer is offline with 3 queued messages', level: 'debug', timestamp: '2026-08-09T12:18:00Z' },
+  ];
+  state.activeInbox = 'orchestrator';
+}
+render();
+if (!demoMode) refresh();
+if (!demoMode && typeof EventSource !== 'undefined') {
+  const events = new EventSource(`${API}/events`);
+  events.addEventListener('update', (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      if (payload.type !== 'connected') addEvent(`${payload.type} / ${payload.from || 'relay'}`, 'info');
+      refresh();
+    } catch { /* reconnecting state is visible in the health badge */ }
+  });
+  events.onerror = () => {
+    document.getElementById('connection-status').dataset.tone = 'warning';
+    document.getElementById('connection-status').lastElementChild.textContent = 'RECONNECTING';
+  };
+}
 </script>
 </body>
 </html>
