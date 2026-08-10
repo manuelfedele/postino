@@ -235,6 +235,7 @@ Names are limited to 64 alphanumeric characters plus hyphens, dots, and undersco
 ```bash
 npx postino mcp       # Start the MCP adapter over stdio
 npx postino serve     # Run the standalone web interface
+npx postino tui       # Open the Ink terminal control surface
 npx postino config    # Print an MCP configuration entry
 npx postino help      # Show usage
 ```
@@ -242,6 +243,30 @@ npx postino help      # Show usage
 There is no universal agent installation or lifecycle-hook format. Agent runtimes own registration, startup, shutdown, and polling. Postino provides protocol endpoints that can be embedded into those workflows without a product-specific plugin.
 
 Delivery is at-least-once after leasing: an agent must acknowledge a message after processing it, and handlers should be idempotent. `POST /messages` and `msg_send` accept an idempotency key, so retries do not create duplicate messages.
+
+## Terminal UI
+
+The Ink TUI is the fastest way for a human operator to inspect and steer a relay without opening a browser:
+
+```bash
+npx postino tui
+```
+
+The control surface shows the agent rail, queue depth, direct inboxes, broadcasts, connection state, and lease status in one dense desktop view.
+
+| Key | Action |
+|:----|:-------|
+| `j` / `k` or arrows | Select an agent |
+| `i` | Open the selected inbox |
+| `l` | Lease the next messages |
+| `a` | Acknowledge leased messages |
+| `m` | Compose a direct message |
+| `b` | Open broadcasts or compose a broadcast |
+| `r` | Refresh relay state |
+| `?` | Show the keymap |
+| `q` / `Ctrl-C` | Exit |
+
+The TUI uses the same Valkey storage, stable identities, idempotent writes, event publication, and at-least-once lease/ack contract as MCP and HTTP clients.
 
 ## Development
 

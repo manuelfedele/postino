@@ -67,6 +67,7 @@ function printHelp(): void {
   Usage:
     npx postino mcp          Start the MCP server over stdio
     npx postino serve        Run the web interface as a standalone daemon
+    npx postino tui          Open the terminal control surface
     npx postino config [--agent NAME]  Print an MCP server configuration entry
     npx postino help         Show this help
 
@@ -85,6 +86,9 @@ switch (command) {
     break;
   case "serve":
     serve();
+    break;
+  case "tui":
+    import("./tui.js").then(({ runTui }) => runTui());
     break;
   case "config":
     printMcpConfig(args[args.indexOf("--agent") + 1]);
