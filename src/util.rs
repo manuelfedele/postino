@@ -1,7 +1,7 @@
 use std::collections::hash_map::RandomState;
 use std::fs::{self, OpenOptions};
 use std::hash::{BuildHasher, Hasher};
-use std::io::{self, Read};
+use std::io;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -84,15 +84,36 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 /// weaker may stand in for it.
 pub fn secret_hex(bytes: usize) -> io::Result<String> {
     let mut buf = vec![0u8; bytes];
+    system_random(&mut buf)?;
+    Ok(to_hex(&buf))
+}
+
+/// Fills `buf` from the operating system's cryptographic generator.
+#[cfg(not(windows))]
+fn system_random(buf: &mut [u8]) -> io::Result<()> {
+    use std::io::Read;
     fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
+        .and_then(|mut f| f.read_exact(buf))
         .map_err(|e| {
             io::Error::new(
                 e.kind(),
                 format!("cannot read /dev/urandom for a secret: {e}"),
             )
-        })?;
-    Ok(to_hex(&buf))
+        })
+}
+
+/// Fills `buf` from the operating system's cryptographic generator, the
+/// one the standard library seeds its own hashing from.
+#[cfg(windows)]
+fn system_random(buf: &mut [u8]) -> io::Result<()> {
+    #[link(name = "bcryptprimitives", kind = "raw-dylib")]
+    unsafe extern "system" {
+        fn ProcessPrng(data: *mut u8, len: usize) -> i32;
+    }
+    // SAFETY: `buf` is valid for writes of its whole length. The call
+    // cannot fail: it fills the buffer and returns TRUE whatever happens.
+    unsafe { ProcessPrng(buf.as_mut_ptr(), buf.len()) };
+    Ok(())
 }
 
 /// Random hex string for a name that must not repeat but need not be
