@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::commands::{
-    Ctx, KEYS_RUN, Name, Outcome, Reply, grows, key_args, keys_run, visible_keys, within_reply,
-    writes,
+    Ctx, Name, Outcome, Reply, Scan, WALK_RUN, WALK_WHOLE, grows, key_args, too_long, walk,
+    within_reply, writes,
 };
 use crate::config::OPERATOR;
 use crate::db::literal_prefix;
@@ -2656,23 +2656,39 @@ impl Core {
     }
 
     /// Server facts. Callers with a scope count only the keys they reach and
-    /// see nothing of other agents.
+    /// see nothing of other agents. In a batch, which runs whole, it looks at
+    /// [`WALK_WHOLE`] keys at most; sent alone, a run at a time instead.
     fn info(&self, access: &Access, now: u64) -> Reply {
-        let db = &self.store.db;
-        let (mut keys, mut expiring, mut bytes, mut streams) = (0usize, 0usize, 0usize, 0usize);
-        for (key, entry) in visible_keys(db, &access.scope, "", None, now) {
-            keys += 1;
-            expiring += usize::from(entry.expires.is_some());
-            bytes += key.len() + entry.value.footprint();
-            streams += usize::from(entry.value.type_name() == "stream");
+        let mut stats = KeyStats::default();
+        let add = |key: &String, entry: &crate::db::Entry| {
+            stats.add(key, entry);
+            true
+        };
+        if walk(
+            &self.store.db,
+            &access.scope,
+            "",
+            None,
+            WALK_WHOLE + 1,
+            now,
+            add,
+        )
+        .is_some()
+        {
+            return Reply::Error(too_long("INFO"));
         }
+        self.info_reply(access, &stats)
+    }
+
+    /// INFO, with what it counted of the keys the caller reaches.
+    fn info_reply(&self, access: &Access, stats: &KeyStats) -> Reply {
         let int = |n: usize| Reply::Int(n as i64);
         let mut fields = vec![
             ("version".into(), Reply::Bulk(VERSION.into())),
-            ("keys".into(), int(keys)),
-            ("expiring_keys".into(), int(expiring)),
-            ("streams".into(), int(streams)),
-            ("approximate_bytes".into(), int(bytes)),
+            ("keys".into(), int(stats.keys)),
+            ("expiring_keys".into(), int(stats.expiring)),
+            ("streams".into(), int(stats.streams)),
+            ("approximate_bytes".into(), int(stats.bytes)),
             ("max_keys".into(), int(self.limits.max_keys)),
         ];
         if access.admin {
@@ -2892,6 +2908,24 @@ enum Patience {
     Wait,
     Refuse,
     Refused,
+}
+
+/// What INFO counts of the keys a caller reaches.
+#[derive(Default)]
+struct KeyStats {
+    keys: usize,
+    expiring: usize,
+    streams: usize,
+    bytes: usize,
+}
+
+impl KeyStats {
+    fn add(&mut self, key: &str, entry: &crate::db::Entry) {
+        self.keys += 1;
+        self.expiring += usize::from(entry.expires.is_some());
+        self.streams += usize::from(entry.value.type_name() == "stream");
+        self.bytes += key.len() + entry.value.footprint();
+    }
 }
 
 /// Runs `op` without letting anything in it wait. A request that would wait
@@ -3208,8 +3242,19 @@ impl Broker {
         max_wait: Duration,
         alive: &dyn Fn() -> bool,
     ) -> Result<Reply> {
-        if argv.len() == 2 && Name::of(argv).as_str() == "KEYS" {
-            return Ok(self.keys(argv, access));
+        // Walks through the keyspace, sent alone, take the lock a run of keys
+        // at a time: see [`Broker::in_runs`].
+        let walking = match Name::of(argv).as_str() {
+            "KEYS" => argv.len() == 2,
+            "DBSIZE" => argv.len() == 1 && !access.scope.is_all(),
+            "SCAN" | "INFO" => true,
+            _ => false,
+        };
+        if walking {
+            if let Err(denied) = access.permit(argv) {
+                return Ok(Reply::Error(denied));
+            }
+            return Ok(self.walk(argv, access));
         }
         let out = self.run(|core, now| core.command(argv, access, true, now))?;
         let Some(block) = out.block else {
@@ -3234,50 +3279,103 @@ impl Broker {
         Ok(found.unwrap_or(Reply::Nil))
     }
 
-    /// KEYS, sent alone: [`KEYS_RUN`] keys at a time, letting go of the lock
-    /// between runs, so that a pattern every key has to be checked against
-    /// holds up other requests no longer than a run does. One with more than
-    /// a run to look at moves off a connection loop to a thread of its own,
-    /// as a request that waits does. A key there all along is listed once;
-    /// one added or removed meanwhile may or may not be, as with SCAN.
-    fn keys(&self, argv: &[String], access: &Access) -> Reply {
-        if let Err(denied) = access.permit(argv) {
-            return Reply::Error(denied);
+    /// KEYS, SCAN, INFO, or DBSIZE for a scope, [`WALK_RUN`] keys at a time:
+    /// see [`Broker::in_runs`].
+    fn walk(&self, argv: &[String], access: &Access) -> Reply {
+        let scope = &access.scope;
+        let mut after: Option<String> = None;
+        match Name::of(argv).as_str() {
+            "KEYS" => {
+                let pattern = match Glob::client(&argv[1]) {
+                    Ok(pattern) => pattern,
+                    Err(e) => return Reply::Error(e),
+                };
+                let prefix = crate::db::literal_prefix(pattern.as_str());
+                let (mut listed, mut bytes, mut full) = (Vec::new(), 0, None);
+                self.in_runs(|core, now| {
+                    let list = |key: &String, _: &crate::db::Entry| {
+                        if !pattern.matches(key) {
+                            return true;
+                        }
+                        let key = Reply::Bulk(key.clone());
+                        bytes += key.size();
+                        if let Err(e) = within_reply(bytes) {
+                            full = Some(e);
+                            return false;
+                        }
+                        listed.push(key);
+                        true
+                    };
+                    let paused = walk(
+                        &core.store.db,
+                        scope,
+                        prefix,
+                        after.as_deref(),
+                        WALK_RUN,
+                        now,
+                        list,
+                    );
+                    if let Some(e) = full.take() {
+                        return Some(Reply::Error(e));
+                    }
+                    match paused {
+                        Some(last) => {
+                            after = Some(last);
+                            None
+                        }
+                        None => Some(Reply::Array(std::mem::take(&mut listed))),
+                    }
+                })
+            }
+            "SCAN" => {
+                let mut scan = match Scan::new(argv) {
+                    Ok(scan) => scan,
+                    Err(e) => return Reply::Error(e),
+                };
+                self.in_runs(|core, now| scan.run(&core.store.db, scope, WALK_RUN, now))
+            }
+            name => {
+                let mut stats = KeyStats::default();
+                self.in_runs(|core, now| {
+                    let add = |key: &String, entry: &crate::db::Entry| {
+                        stats.add(key, entry);
+                        true
+                    };
+                    match walk(
+                        &core.store.db,
+                        scope,
+                        "",
+                        after.as_deref(),
+                        WALK_RUN,
+                        now,
+                        add,
+                    ) {
+                        Some(last) => {
+                            after = Some(last);
+                            None
+                        }
+                        None if name == "INFO" => Some(core.info_reply(access, &stats)),
+                        None => Some(Reply::Int(stats.keys as i64)),
+                    }
+                })
+            }
         }
-        let pattern = match Glob::client(&argv[1]) {
-            Ok(pattern) => pattern,
-            Err(e) => return Reply::Error(e),
-        };
-        let (mut listed, mut bytes) = (Vec::new(), 0);
-        let mut after = None;
+    }
+
+    /// Runs `step` with the lock held, a run of keys at a time, until it
+    /// returns the reply, resting between runs so that requests waiting for
+    /// the lock take it, however many keys a walk passes over. On a
+    /// connection loop, a walk with more than a run to it stops after the
+    /// first, which changed nothing, and starts over on a thread of its own.
+    fn in_runs(&self, mut step: impl FnMut(&Core, u64) -> Option<Reply>) -> Reply {
         loop {
-            let (found, last) = self.run(|core, now| {
-                keys_run(
-                    &core.store.db,
-                    &access.scope,
-                    &pattern,
-                    after.as_deref(),
-                    KEYS_RUN,
-                    now,
-                )
-            });
-            for key in found {
-                let key = Reply::Bulk(key);
-                bytes += key.size();
-                if let Err(e) = within_reply(bytes) {
-                    return Reply::Error(e);
-                }
-                listed.push(key);
+            if let Some(reply) = self.run(|core, now| step(core, now)) {
+                return reply;
             }
-            match last {
-                None => return Reply::Array(listed),
-                // Its first run changed nothing: it starts over on its thread.
-                Some(_) if refuse_to_wait() => return Reply::Nil,
-                Some(last) => {
-                    after = Some(last);
-                    std::thread::sleep(REST);
-                }
+            if refuse_to_wait() {
+                return Reply::Nil;
             }
+            std::thread::sleep(REST);
         }
     }
 
@@ -4419,7 +4517,7 @@ mod tests {
     #[test]
     fn keys_looks_at_a_run_of_keys_at_a_time_and_lists_each_once() {
         let broker = Broker::open(Limits::default(), Storage::Memory).unwrap();
-        let total = crate::commands::KEYS_WHOLE + 1;
+        let total = crate::commands::WALK_WHOLE + 1;
         broker.run(|core, _| {
             for i in 0..total {
                 let argv = ["SET".to_string(), format!("k{i:05}"), "v".into()];
@@ -4492,6 +4590,74 @@ mod tests {
             }
         }
         assert_eq!(seen, all);
+    }
+
+    #[test]
+    fn walks_pass_over_keys_out_of_reach_a_run_at_a_time() {
+        let broker = Broker::open(Limits::default(), Storage::Memory).unwrap();
+        let set = |key: String| ["SET".to_string(), key, "v".into()];
+        broker.run(|core, _| {
+            for i in 0..=crate::commands::WALK_WHOLE {
+                core.store
+                    .db
+                    .exec(&set(format!("k{i:05}")), &Ctx::replay(0));
+            }
+            for key in ["k00500:mine", "k09000:mine"] {
+                core.store.db.exec(&set(key.into()), &Ctx::replay(0));
+            }
+        });
+        // A scope without a fixed start reaches keys anywhere among others.
+        let mine = Access {
+            admin: false,
+            scope: Arc::new(Scope::new(vec!["*:mine".into()], Vec::new(), Vec::new())),
+        };
+        let words = |line: &str| line.split(' ').map(String::from).collect::<Vec<_>>();
+        let command = |line: &str| {
+            broker
+                .command(&words(line), &mine, Duration::ZERO, &|| true)
+                .unwrap()
+        };
+        let bulk = |s: &str| Reply::Bulk(s.into());
+        let hex = |s: &str| s.bytes().map(|b| format!("{b:02x}")).collect::<String>();
+        // Sent alone, each walks every run, and sees only what it reaches.
+        assert_eq!(command("DBSIZE"), Reply::Int(2));
+        let Reply::Map(info) = command("INFO") else {
+            panic!("INFO replies with a map")
+        };
+        assert!(info.iter().any(|(k, v)| k == "keys" && *v == Reply::Int(2)));
+        let both = vec![bulk("k00500:mine"), bulk("k09000:mine")];
+        assert_eq!(command("KEYS *"), Reply::Array(both));
+        // SCAN's cursor names only keys the scope reaches, however many
+        // others it passes over.
+        let mut cursor = "0".to_string();
+        for key in ["k00500:mine", "k09000:mine", ""] {
+            let Reply::Array(page) = command(&format!("SCAN {cursor} COUNT 1")) else {
+                panic!("SCAN replies with a cursor and keys")
+            };
+            let (next, found) = if key.is_empty() {
+                ("0".to_string(), Vec::new())
+            } else {
+                (hex(key), vec![bulk(key)])
+            };
+            assert_eq!(page, vec![Reply::Bulk(next.clone()), Reply::Array(found)]);
+            cursor = next;
+        }
+        // On a connection loop, a walk with more than a run to it moves to a
+        // thread of its own.
+        for line in ["DBSIZE", "INFO", "KEYS *", "SCAN 0"] {
+            assert!(without_waiting(|| command(line)).is_none(), "{line}");
+        }
+        // A batch runs whole, and each of them in it fails past a limit.
+        let batch = ["DBSIZE", "INFO", "KEYS *", "SCAN 0"].map(words);
+        let replies = broker
+            .run(|core, now| core.multi(&batch, &mine, now))
+            .unwrap();
+        for reply in replies {
+            assert!(
+                matches!(&reply, Reply::Error(e) if e.contains("send it alone")),
+                "{reply:?}"
+            );
+        }
     }
 
     #[test]

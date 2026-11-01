@@ -59,7 +59,7 @@ The server checks a command against the scope before running it:
 
 - Every key a command names is checked, including each key of `MGET`, `DEL`, `RENAME`, and multi-stream `XREAD`. A command that names a key out of reach fails with `NOPERM` and HTTP `403`, and changes nothing.
 - A batch sent to `/api/db/multi` with one such command is refused whole; none of its commands run.
-- `KEYS`, `SCAN`, `DBSIZE`, and `INFO` see only the keys the scope reaches. They visit only those keys, so an agent listing its own namespace never walks anyone else's.
+- `KEYS`, `SCAN`, `DBSIZE`, and `INFO` see only the keys the scope reaches. They visit only the keys starting with the fixed start of the scope's patterns, so an agent listing its own namespace never walks anyone else's. A pattern without one, such as `*:logs`, has them pass over every key, a thousand at a time while other requests run.
 - `PUBLISH` and subscriptions need the channel in scope. A pattern subscription such as `*` is allowed but receives only channels in scope, and key-change notifications only for keys the agent can read.
 - Following a stream with `/api/tail/<key>` needs read access to the key.
 - Nobody can publish to `__keyspace__` or `__keyevent__` channels, administrators included. Only the server announces key changes.
@@ -106,7 +106,7 @@ An agent sees which agents exist and whether they are online, so it can find who
 | Messages a subscription has waiting to be sent | 256, or 4 MiB beyond one message. A message is held once, however many subscriptions it reaches | the stream ends; the client opens it again |
 | Room a connection's buffers keep once emptied | 64 KiB each way, and none once it has gone 2 seconds without a byte in or out | the rest goes back to the system |
 | A response, alone or a whole batch | 64 MiB | a read past it fails, once it has copied that much, however large what it reads |
-| Keys one `KEYS` or `SCAN` looks at while every other request waits | 1,000 for `SCAN`, whatever its `COUNT`; 1,000 at a time for `KEYS` sent alone, which lets other requests run between runs; 10,000 for `KEYS` in a batch | `SCAN` returns fewer keys and a cursor to go on from; `KEYS` in a batch fails |
+| Keys `KEYS`, `SCAN`, `INFO`, or a scoped `DBSIZE` looks at while every other request waits | 1,000 at a time sent alone, which lets other requests run between runs; 10,000 in a batch | in a batch, the command fails |
 | Time to send a request head | 15 seconds | the connection closes with `408` |
 | Request body rate | 64 KiB per second, after the head's 15 seconds | the connection closes with `408` |
 

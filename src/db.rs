@@ -298,22 +298,32 @@ impl Value {
 
     /// Approximate memory footprint in bytes, for INFO.
     pub fn footprint(&self) -> usize {
+        /// Sizes the first [`FOOTPRINT_SAMPLE`] elements, and counts the rest
+        /// at their average, so a big collection costs no more than a small one.
+        fn sampled<T>(
+            len: usize,
+            items: impl Iterator<Item = T>,
+            size: impl Fn(T) -> usize,
+        ) -> usize {
+            let (mut looked, mut bytes) = (0, 0);
+            for item in items.take(FOOTPRINT_SAMPLE) {
+                looked += 1;
+                bytes += size(item);
+            }
+            (bytes * len).checked_div(looked).unwrap_or(0)
+        }
         match self {
             Value::String(s) => s.len(),
-            Value::List(l) => l.iter().map(|v| v.len() + 24).sum(),
-            Value::Hash(h) => h.iter().map(|(k, v)| k.len() + v.len() + 48).sum(),
-            Value::Set(s) => s.iter().map(|m| m.len() + 32).sum(),
-            Value::ZSet(z) => z.scores.keys().map(|m| m.len() + 64).sum(),
-            Value::Stream(s) => s
-                .entries
-                .values()
-                .map(|fields| {
-                    32 + fields
-                        .iter()
-                        .map(|(f, v)| f.len() + v.len() + 48)
-                        .sum::<usize>()
-                })
-                .sum(),
+            Value::List(l) => sampled(l.len(), l.iter(), |v| v.len() + 24),
+            Value::Hash(h) => sampled(h.len(), h.iter(), |(k, v)| k.len() + v.len() + 48),
+            Value::Set(s) => sampled(s.len(), s.iter(), |m| m.len() + 32),
+            Value::ZSet(z) => sampled(z.scores.len(), z.scores.keys(), |m| m.len() + 64),
+            Value::Stream(s) => sampled(s.entries.len(), s.entries.values(), |fields| {
+                32 + fields
+                    .iter()
+                    .map(|(f, v)| f.len() + v.len() + 48)
+                    .sum::<usize>()
+            }),
         }
     }
 }
@@ -770,14 +780,14 @@ impl Db {
         self.live_keys(now).count()
     }
 
-    /// Live keys after `after` that start with one of `prefixes`, in key order.
-    /// The prefixes must be sorted and none may start with another, so each
-    /// names its own run of keys and only those runs are visited.
-    pub fn keys_with_prefixes<'a>(
+    /// Keys after `after` that start with one of `prefixes`, in key order,
+    /// expired ones included. The prefixes must be sorted and none may start
+    /// with another, so each names its own run of keys and only those runs
+    /// are visited.
+    pub fn with_prefixes<'a>(
         &'a self,
         prefixes: Vec<String>,
         after: Option<&'a str>,
-        now: u64,
     ) -> impl Iterator<Item = (&'a String, &'a Entry)> + 'a {
         prefixes.into_iter().flat_map(move |prefix| {
             let start = match after {
@@ -787,7 +797,6 @@ impl Db {
             self.keys
                 .range::<String, _>((start, Bound::Unbounded))
                 .take_while(move |(k, _)| k.starts_with(prefix.as_str()))
-                .filter(move |(_, e)| !e.expired(now))
         })
     }
 
@@ -851,6 +860,9 @@ impl Db {
 
 /// The text every match of a glob pattern starts with: everything before its
 /// first wildcard or escape.
+/// Elements of a collection [`Value::footprint`] sizes one by one.
+const FOOTPRINT_SAMPLE: usize = 128;
+
 pub fn literal_prefix(pattern: &str) -> &str {
     let end = pattern.find(['*', '?', '[', '\\']).unwrap_or(pattern.len());
     &pattern[..end]

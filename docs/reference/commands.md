@@ -38,9 +38,11 @@ A response carries at most 64 MiB. A read that would return more, alone or with 
 | `RENAME key newkey` | `OK`; replaces `newkey` |
 | `RENAMENX key newkey` | 1, or 0 if `newkey` exists |
 | `KEYS pattern` | matching key names, in order; a pattern with a fixed start such as `task:*` visits only those keys. Sent alone it looks at a thousand keys at a time, letting other requests run in between, so a key added or removed meanwhile may or may not be listed; in a [batch](http.md#run-commands-atomically) it runs whole, and fails past 10,000 keys |
-| `SCAN cursor [MATCH pattern] [COUNT n] [TYPE type]` | `[next-cursor, [keys...]]`; start with `0`, pass back the cursor you get, and stop when it is `0` again. Each call looks at `COUNT` keys (10 by default, 1,000 at most) |
+| `SCAN cursor [MATCH pattern] [COUNT n] [TYPE type]` | `[next-cursor, [keys...]]`; start with `0`, pass back the cursor you get, and stop when it is `0` again. Each call takes the next `COUNT` keys (10 by default, 1,000 at most), which `MATCH` and `TYPE` then choose among |
 | `DBSIZE` | number of keys; one that has just expired may count until the server removes it, usually within a second |
 | `FLUSHDB`, `FLUSHALL` | `OK`; removes every key (administrator only) |
+
+Sent alone, `KEYS`, `SCAN`, and `DBSIZE` for a token with a [scope](../guides/security.md#scopes) look at a thousand keys at a time, counting the keys they pass over out of the token's reach, and let other requests run in between. In a [batch](http.md#run-commands-atomically), which runs whole, they fail past 10,000 keys.
 
 `NX` sets an expiry only when there is none, `XX` only when there is one, `GT` only if the new one is later, `LT` only if earlier. An expiry in the past deletes the key. An expiry that doesn't fit in 64 bits of milliseconds fails with `ERR invalid expire time`.
 
@@ -198,7 +200,7 @@ Channel names and patterns are at most 256 bytes. Subscribing is a long-lived co
 | `PING [message]` | `PONG`, or the message |
 | `ECHO message` | the message |
 | `TIME` | `[unix-seconds, microseconds]` |
-| `INFO` | a map: version, keys, keys with an expiry, streams, approximate bytes, subscriptions, agents, rooms |
+| `INFO` | a map: version, keys, keys with an expiry, streams, approximate bytes (a big collection's estimated from its first 128 elements), subscriptions, agents, rooms; like `KEYS`, it looks at a thousand keys at a time sent alone, and fails past 10,000 in a batch |
 | `COMMAND` | the names of every command |
 | `COMMAND COUNT` | how many there are |
 

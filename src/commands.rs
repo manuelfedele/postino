@@ -389,50 +389,144 @@ fn key_spec(name: &str) -> Option<Keys> {
     })
 }
 
-/// Live keys starting with `prefix` (after `after`, if given) that `scope` can
-/// read, in key order. Only the runs of keys the scope can reach are visited,
-/// so an agent listing its own namespace never walks anyone else's.
-pub fn visible_keys<'a>(
-    db: &'a Db,
-    scope: &'a Scope,
-    prefix: &str,
-    after: Option<&'a str>,
-    now: u64,
-) -> impl Iterator<Item = (&'a String, &'a Entry)> + 'a {
-    db.keys_with_prefixes(scope.search_prefixes(prefix), after, now)
-        .filter(|(k, _)| scope.can_read(k))
-}
-
-/// Keys one SCAN looks at, whatever its COUNT: the lock is held meanwhile.
+/// Keys a walk through the keyspace looks at with the lock held, before
+/// letting other requests run (see [`crate::broker::Broker::command`]).
+/// Every key it passes counts, one the caller cannot read or that has
+/// expired included.
+pub const WALK_RUN: usize = 1000;
+/// Keys a walk that has to run whole, as in a batch, may look at.
+pub const WALK_WHOLE: usize = 10_000;
+/// Keys one SCAN returns at most, whatever its COUNT.
 pub const SCAN_MOST: usize = 1000;
-/// Keys a KEYS looks at with the lock held, before letting other requests
-/// run (see [`crate::broker::Broker::command`]).
-pub const KEYS_RUN: usize = 1000;
-/// Keys a KEYS that has to run whole, as in a batch, may look at.
-pub const KEYS_WHOLE: usize = 10_000;
 
-/// The keys after `after` that `pattern` matches, among the next `run` keys
-/// the caller may read; and the last one looked at, when the run ended
-/// before the keys did.
-pub fn keys_run(
+/// Hands `visit` the live keys starting with `prefix`, after `after`, that
+/// `scope` can read, in key order, until it returns false or `most` keys
+/// have been looked at. Only the runs of keys the scope can reach are
+/// visited. Returns the last key looked at when it stopped for `most`.
+pub fn walk(
     db: &Db,
     scope: &Scope,
-    pattern: &Glob,
+    prefix: &str,
     after: Option<&str>,
-    run: usize,
+    most: usize,
     now: u64,
-) -> (Vec<String>, Option<String>) {
-    let mut found = Vec::new();
-    let keys = visible_keys(db, scope, literal_prefix(pattern.as_str()), after, now);
-    for (looked, (key, _)) in keys.enumerate() {
-        if pattern.matches(key) {
-            found.push(key.clone());
+    mut visit: impl FnMut(&String, &Entry) -> bool,
+) -> Option<String> {
+    let keys = db.with_prefixes(scope.search_prefixes(prefix), after);
+    for (looked, (key, entry)) in keys.enumerate() {
+        if !entry.expired(now) && scope.can_read(key) && !visit(key, entry) {
+            return None;
         }
-        if looked + 1 == run {
-            return (found, Some(key.clone()));
+        if looked + 1 == most {
+            return Some(key.clone());
         }
     }
-    (found, None)
+    None
+}
+
+/// The error of a walk in a batch that would look at more than
+/// [`WALK_WHOLE`] keys.
+pub fn too_long(command: &str) -> String {
+    format!(
+        "ERR {command} in a batch looks at {WALK_WHOLE} keys at most, while every other request waits; send it alone"
+    )
+}
+
+/// A SCAN under way: what it asks for, and the page found so far. The cursor
+/// it returns names the last key of the page, so it only ever names a key
+/// the caller can read; where a walk paused, among keys it cannot, stays here.
+pub struct Scan {
+    pattern: Option<Glob>,
+    count: usize,
+    kind: Option<String>,
+    after: Option<String>,
+    seen: usize,
+    last: Option<String>,
+    found: Vec<String>,
+}
+
+impl Scan {
+    pub fn new(argv: &[String]) -> Result<Scan, String> {
+        if argv.len() < 2 {
+            return Err(wrong_args(&argv[0]));
+        }
+        let after = match argv[1].as_str() {
+            "0" => None,
+            cursor => Some(
+                from_hex(cursor)
+                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                    .ok_or("ERR invalid cursor")?,
+            ),
+        };
+        let mut scan = Scan {
+            pattern: None,
+            count: 10,
+            kind: None,
+            after,
+            seen: 0,
+            last: None,
+            found: Vec::new(),
+        };
+        let mut i = 2;
+        while i < argv.len() {
+            let value = argv.get(i + 1).ok_or(SYNTAX)?;
+            match argv[i].to_ascii_uppercase().as_str() {
+                "MATCH" => scan.pattern = Some(Glob::client(value)?),
+                "COUNT" => match int(value)? {
+                    n if n >= 1 => scan.count = (n as usize).min(SCAN_MOST),
+                    _ => return Err(SYNTAX.into()),
+                },
+                "TYPE" => scan.kind = Some(value.to_ascii_lowercase()),
+                _ => return Err(SYNTAX.into()),
+            }
+            i += 2;
+        }
+        Ok(scan)
+    }
+
+    /// Looks at up to `most` more keys, and returns the reply once the page
+    /// is complete: `COUNT` keys the caller can read, before `MATCH` and
+    /// `TYPE` choose among them, or every key left.
+    pub fn run(&mut self, db: &Db, scope: &Scope, most: usize, now: u64) -> Option<Reply> {
+        let prefix = self
+            .pattern
+            .as_ref()
+            .map_or("", |p| literal_prefix(p.as_str()));
+        let paused = walk(
+            db,
+            scope,
+            prefix,
+            self.after.as_deref(),
+            most,
+            now,
+            |key, entry| {
+                self.seen += 1;
+                if self.pattern.as_ref().is_none_or(|p| p.matches(key))
+                    && self
+                        .kind
+                        .as_deref()
+                        .is_none_or(|t| entry.value.type_name() == t)
+                {
+                    self.found.push(key.clone());
+                }
+                if self.seen < self.count {
+                    return true;
+                }
+                self.last = Some(key.clone());
+                false
+            },
+        );
+        if paused.is_some() {
+            self.after = paused;
+            return None;
+        }
+        let next = self
+            .last
+            .as_ref()
+            .map_or_else(|| "0".to_string(), |last| to_hex(last.as_bytes()));
+        let found = std::mem::take(&mut self.found);
+        Some(Reply::Array(vec![Reply::Bulk(next), Reply::bulks(found)]))
+    }
 }
 
 /// A command's name in upper case, kept on the stack: each request's is
@@ -860,11 +954,20 @@ impl Exec<'_> {
                 let scope = &self.ctx.access.scope;
                 // Every key held, counted without visiting them; one that has
                 // just expired counts until the expire cycle removes it.
-                Ok(Reply::int(if scope.is_all() {
-                    self.db.entries().len()
-                } else {
-                    visible_keys(self.db, scope, "", None, self.now()).count()
-                }))
+                if scope.is_all() {
+                    return Ok(Reply::int(self.db.entries().len()));
+                }
+                // A scope's keys are counted one by one; sent alone, a run
+                // at a time: see [`crate::broker::Broker::command`].
+                let mut keys = 0;
+                let count = |_: &String, _: &Entry| {
+                    keys += 1;
+                    true
+                };
+                if walk(self.db, scope, "", None, WALK_WHOLE + 1, self.now(), count).is_some() {
+                    return Err(too_long("DBSIZE"));
+                }
+                Ok(Reply::int(keys))
             }
             "FLUSHDB" | "FLUSHALL" => {
                 if !self.ctx.access.admin {
@@ -924,11 +1027,28 @@ impl Exec<'_> {
                 self.exactly(2)?;
                 let pattern = Glob::client(self.arg(1))?;
                 let scope = &self.ctx.access.scope;
-                let (keys, more) =
-                    keys_run(self.db, scope, &pattern, None, KEYS_WHOLE + 1, self.now());
-                if more.is_some() {
+                let prefix = literal_prefix(pattern.as_str());
+                let mut keys = Vec::new();
+                let list = |key: &String, _: &Entry| {
+                    if pattern.matches(key) {
+                        keys.push(key.clone());
+                    }
+                    true
+                };
+                if walk(
+                    self.db,
+                    scope,
+                    prefix,
+                    None,
+                    WALK_WHOLE + 1,
+                    self.now(),
+                    list,
+                )
+                .is_some()
+                {
                     return Err(format!(
-                        "ERR KEYS in a batch looks at {KEYS_WHOLE} keys at most, while every other request waits; send it alone, or page through the keys with SCAN"
+                        "{}, or page through the keys with SCAN",
+                        too_long("KEYS")
                     ));
                 }
                 collect_within(keys.into_iter().map(Reply::Bulk))
@@ -2016,50 +2136,13 @@ impl Exec<'_> {
 
     /// Walks the keyspace in key order. The cursor names the last key of the
     /// previous page, so a walk costs one pass however many pages it takes.
+    /// Sent alone, a SCAN passes over keys the caller cannot read a run at a
+    /// time instead: see [`crate::broker::Broker::command`].
     fn scan(&self) -> R {
-        self.arity(2)?;
-        let after = match self.arg(1) {
-            "0" => None,
-            cursor => Some(
-                from_hex(cursor)
-                    .and_then(|bytes| String::from_utf8(bytes).ok())
-                    .ok_or("ERR invalid cursor")?,
-            ),
-        };
-        let mut pattern = None;
-        let mut batch = 10;
-        let mut kind = None;
-        let mut i = 2;
-        while i < self.argv.len() {
-            let value = self.argv.get(i + 1).ok_or(SYNTAX)?;
-            match self.arg(i).to_ascii_uppercase().as_str() {
-                "MATCH" => pattern = Some(Glob::client(value)?),
-                "COUNT" => match int(value)? {
-                    n if n >= 1 => batch = (n as usize).min(SCAN_MOST),
-                    _ => return Err(SYNTAX.into()),
-                },
-                "TYPE" => kind = Some(value.to_ascii_lowercase()),
-                _ => return Err(SYNTAX.into()),
-            }
-            i += 2;
-        }
-        let now = self.now();
+        let mut scan = Scan::new(self.argv)?;
         let scope = &self.ctx.access.scope;
-        let prefix = pattern.as_ref().map_or("", |p| literal_prefix(p.as_str()));
-        let keys: Vec<(&String, &Entry)> =
-            visible_keys(self.db, scope, prefix, after.as_deref(), now)
-                .take(batch)
-                .collect();
-        let next = match keys.last() {
-            Some((last, _)) if keys.len() == batch => to_hex(last.as_bytes()),
-            _ => "0".to_string(),
-        };
-        let found = keys
-            .into_iter()
-            .filter(|(k, _)| pattern.as_ref().is_none_or(|p| p.matches(k)))
-            .filter(|(_, e)| kind.as_deref().is_none_or(|t| e.value.type_name() == t))
-            .map(|(k, _)| k.clone());
-        Ok(Reply::Array(vec![Reply::Bulk(next), Reply::bulks(found)]))
+        scan.run(self.db, scope, WALK_WHOLE + 1, self.now())
+            .ok_or_else(|| too_long("SCAN"))
     }
 
     // ---- strings -----------------------------------------------------------
