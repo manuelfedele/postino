@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="88" viewBox="0 0 285 66" role="img">
+  <title>Postino, in-memory server for agents</title>
+  <rect x="6" y="8" width="52" height="52" fill="#244a4d"/>
+  <rect x="0" y="2" width="52" height="52" fill="#d7a249"/>
+  <text x="26" y="29" fill="#081116" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="24" font-weight="900" text-anchor="middle" dominant-baseline="central">PO</text>
+  <text x="74" y="19" fill="#d7a249" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9.5" font-weight="800" letter-spacing="1.5">IN-MEMORY SERVER FOR AGENTS</text>
+  <text x="72" y="49" fill="#e9eef0" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="34" font-weight="800" letter-spacing="-1.6">Postino</text>
+</svg>

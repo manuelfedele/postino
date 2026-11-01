@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t postino:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name postino -p 2790:2790 -e POSTINO_API_TOKEN=ci-token-0123456789abcdef postino:ci
+          for _ in $(seq 30); do curl -fs http://127.0.0.1:2790/api/health && break; sleep 1; done
+          curl -fs -H 'Authorization: Bearer ci-token-0123456789abcdef' -H 'Content-Type: application/json' \
+            -d '{"to":"worker","body":"hello"}' http://127.0.0.1:2790/api/messages
+          curl -fs -H 'Authorization: Bearer ci-token-0123456789abcdef' -d '["SET", "ci", "ok"]' http://127.0.0.1:2790/api/db
+          test "$(curl -fs -H 'Authorization: Bearer ci-token-0123456789abcdef' -d '["GET", "ci"]' http://127.0.0.1:2790/api/db)" = '{"result":"ok"}'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:2790/api/agents)" = 401
+          docker logs postino

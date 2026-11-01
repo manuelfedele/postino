@@ -1,0 +1,412 @@
+{
+  "date": "2026-10-31",
+  "postino": "0.1.0",
+  "compared": "Redis 8.10",
+  "machine": {
+    "cpu": "Apple M3",
+    "cores": 8,
+    "performance_cores": 4,
+    "efficiency_cores": 4,
+    "os": "Darwin 26.3"
+  },
+  "workload": {
+    "keys": 100000,
+    "value_bytes": 64,
+    "seconds": 3,
+    "repeat": 5
+  },
+  "results": [
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 1,
+      "throughput": 48009.0,
+      "errors": 0,
+      "latency_us": {
+        "max": 650.292,
+        "p50": 20.417,
+        "p90": 21.833,
+        "p99": 26.0,
+        "p999": 88.791
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 2,
+      "throughput": 81227.66666666667,
+      "errors": 0,
+      "latency_us": {
+        "max": 4032.584,
+        "p50": 24.084,
+        "p90": 28.75,
+        "p99": 36.292,
+        "p999": 97.625
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 4,
+      "throughput": 125130.0,
+      "errors": 0,
+      "latency_us": {
+        "max": 2139.166,
+        "p50": 29.667,
+        "p90": 42.209,
+        "p99": 70.5,
+        "p999": 115.166
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 8,
+      "throughput": 153266.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 3447.042,
+        "p50": 49.167,
+        "p90": 70.958,
+        "p99": 115.166,
+        "p999": 164.583
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 16,
+      "throughput": 173403.0,
+      "errors": 0,
+      "latency_us": {
+        "max": 3678.708,
+        "p50": 87.75,
+        "p90": 121.792,
+        "p99": 178.208,
+        "p999": 273.042
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 32,
+      "throughput": 185407.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 4233.083,
+        "p50": 165.875,
+        "p90": 219.584,
+        "p99": 332.5,
+        "p999": 584.958
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "set",
+      "clients": 64,
+      "throughput": 186646.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 2249.042,
+        "p50": 328.542,
+        "p90": 465.0,
+        "p99": 693.959,
+        "p999": 1063.708
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 1,
+      "throughput": 58145.666666666664,
+      "errors": 0,
+      "latency_us": {
+        "max": 194.5,
+        "p50": 16.916,
+        "p90": 18.125,
+        "p99": 21.5,
+        "p999": 31.375
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 2,
+      "throughput": 95418.66666666667,
+      "errors": 0,
+      "latency_us": {
+        "max": 621.458,
+        "p50": 20.5,
+        "p90": 24.667,
+        "p99": 28.791,
+        "p999": 62.041
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 4,
+      "throughput": 150377.0,
+      "errors": 0,
+      "latency_us": {
+        "max": 201.791,
+        "p50": 24.709,
+        "p90": 35.0,
+        "p99": 55.916,
+        "p999": 81.375
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 8,
+      "throughput": 173222.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 777.916,
+        "p50": 44.0,
+        "p90": 62.833,
+        "p99": 97.959,
+        "p999": 145.333
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 16,
+      "throughput": 187931.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 660.083,
+        "p50": 82.333,
+        "p90": 108.0,
+        "p99": 158.083,
+        "p999": 219.0
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 32,
+      "throughput": 193184.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 1327.875,
+        "p50": 162.083,
+        "p90": 198.583,
+        "p99": 296.917,
+        "p999": 446.167
+      }
+    },
+    {
+      "server": "Postino",
+      "op": "get",
+      "clients": 64,
+      "throughput": 194894.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 1567.875,
+        "p50": 324.167,
+        "p90": 386.417,
+        "p99": 572.041,
+        "p999": 804.125
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 1,
+      "throughput": 52472.0,
+      "errors": 0,
+      "latency_us": {
+        "max": 1069.209,
+        "p50": 18.666,
+        "p90": 20.458,
+        "p99": 23.959,
+        "p999": 44.417
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 2,
+      "throughput": 76382.66666666667,
+      "errors": 0,
+      "latency_us": {
+        "max": 2854.791,
+        "p50": 25.959,
+        "p90": 29.875,
+        "p99": 33.875,
+        "p999": 56.667
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 4,
+      "throughput": 120881.66666666667,
+      "errors": 0,
+      "latency_us": {
+        "max": 10847.416,
+        "p50": 31.792,
+        "p90": 42.458,
+        "p99": 63.0,
+        "p999": 95.208
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 8,
+      "throughput": 163859.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 12364.208,
+        "p50": 46.0,
+        "p90": 65.625,
+        "p99": 85.458,
+        "p999": 140.625
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 16,
+      "throughput": 180820.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 13260.916,
+        "p50": 87.292,
+        "p90": 111.166,
+        "p99": 136.5,
+        "p999": 218.958
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 32,
+      "throughput": 180123.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 13348.875,
+        "p50": 163.875,
+        "p90": 220.958,
+        "p99": 289.417,
+        "p999": 490.833
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "set",
+      "clients": 64,
+      "throughput": 182181.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 11962.416,
+        "p50": 341.25,
+        "p90": 446.875,
+        "p99": 553.291,
+        "p999": 1156.625
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 1,
+      "throughput": 63331.333333333336,
+      "errors": 0,
+      "latency_us": {
+        "max": 279.209,
+        "p50": 15.541,
+        "p90": 16.5,
+        "p99": 20.083,
+        "p999": 40.458
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 2,
+      "throughput": 96294.33333333333,
+      "errors": 0,
+      "latency_us": {
+        "max": 349.0,
+        "p50": 20.292,
+        "p90": 24.875,
+        "p99": 29.042,
+        "p999": 63.25
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 4,
+      "throughput": 146955.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 279.834,
+        "p50": 26.375,
+        "p90": 35.041,
+        "p99": 52.375,
+        "p999": 68.916
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 8,
+      "throughput": 198383.0,
+      "errors": 0,
+      "latency_us": {
+        "max": 423.75,
+        "p50": 37.875,
+        "p90": 55.166,
+        "p99": 72.292,
+        "p999": 97.584
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 16,
+      "throughput": 208725.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 344.0,
+        "p50": 75.708,
+        "p90": 98.208,
+        "p99": 121.291,
+        "p999": 167.084
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 32,
+      "throughput": 209714.66666666666,
+      "errors": 0,
+      "latency_us": {
+        "max": 1020.75,
+        "p50": 150.75,
+        "p90": 195.917,
+        "p99": 240.5,
+        "p999": 345.084
+      }
+    },
+    {
+      "server": "Redis 8.10",
+      "op": "get",
+      "clients": 64,
+      "throughput": 203664.33333333334,
+      "errors": 0,
+      "latency_us": {
+        "max": 1168.166,
+        "p50": 307.375,
+        "p90": 398.875,
+        "p99": 477.875,
+        "p999": 598.375
+      }
+    }
+  ]
+}

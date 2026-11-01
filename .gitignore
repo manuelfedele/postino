@@ -1,0 +1,6 @@
+/target
+.DS_Store
+/site
+__pycache__/
+.ruff_cache/
+.playwright-mcp/
