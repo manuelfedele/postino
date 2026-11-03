@@ -62,7 +62,7 @@ postino config --agent builder
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="bench/throughput-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="bench/throughput-light.svg">
-    <img src="bench/throughput-light.svg" alt="Requests per second at 1 to 64 concurrent clients. Postino peaks near 187,000 SETs and 195,000 GETs a second, Redis 8.10 near 182,000 and 210,000.">
+    <img src="bench/throughput-light.svg" alt="Requests per second at 1 to 64 concurrent clients. Postino peaks near 188,000 SETs and 200,000 GETs a second, Redis 8.10 near 192,000 and 212,000.">
   </picture>
 </p>
 
@@ -70,11 +70,11 @@ postino config --agent builder
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="bench/latency-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="bench/latency-light.svg">
-    <img src="bench/latency-light.svg" alt="Latency percentiles at 16 clients. The median reply takes 88 microseconds for a Postino SET and 82 for a GET, against 87 and 76 for Redis 8.10; at p99.9, 273 and 219 microseconds against 219 and 167.">
+    <img src="bench/latency-light.svg" alt="Latency percentiles at 16 clients. The median reply takes 85 microseconds for a Postino SET and 77 for a GET, against 84 and 77 for Redis 8.10; at p99.9, 287 and 237 microseconds against 197 and 182.">
   </picture>
 </p>
 
-Postino answers 92 to 106 percent as many writes as Redis 8.10, more of them at 2, 4, 32, and 64 clients, and 87 to 102 percent as many reads. Both wait on all their connections at once, with kqueue on macOS and epoll on Linux, and write the changes behind a round of replies to their log in one write, before the replies go out. Where Redis does less is in each request: it speaks a protocol made for it, from one thread that owns its data. Postino speaks HTTP and JSON, which any agent can call without a client library, from two threads that take turns at a lock to run commands, and write the log after letting go of it.
+Postino answers 95 to 114 percent as many writes as Redis 8.10, more of them at 2, 4, and 64 clients, and 92 to 110 percent as many reads. Both wait on all their connections at once, with kqueue on macOS and epoll on Linux, and write the changes behind a round of replies to their log in one write, before the replies go out. Where Redis does less is in each request: it speaks a protocol made for it, from one thread that owns its data. Postino speaks HTTP and JSON, which any agent can call without a client library, from two threads that take turns at a lock to run commands, and write the log after letting go of it.
 
 <details>
 <summary>The numbers behind the charts</summary>
@@ -83,22 +83,22 @@ Requests per second:
 
 | Clients | SET, Postino | SET, Redis | GET, Postino | GET, Redis |
 | --: | --: | --: | --: | --: |
-| 1 | 48,000 | 52,500 | 58,100 | 63,300 |
-| 2 | 81,200 | 76,400 | 95,400 | 96,300 |
-| 4 | 125,100 | 120,900 | 150,400 | 147,000 |
-| 8 | 153,300 | 163,900 | 173,200 | 198,400 |
-| 16 | 173,400 | 180,800 | 187,900 | 208,700 |
-| 32 | 185,400 | 180,100 | 193,200 | 209,700 |
-| 64 | 186,600 | 182,200 | 194,900 | 203,700 |
+| 1 | 51,000 | 51,600 | 59,800 | 62,500 |
+| 2 | 85,700 | 75,500 | 103,500 | 94,200 |
+| 4 | 126,700 | 119,400 | 155,600 | 145,100 |
+| 8 | 157,400 | 162,800 | 182,000 | 198,000 |
+| 16 | 176,200 | 186,500 | 191,100 | 203,800 |
+| 32 | 183,100 | 192,200 | 197,300 | 211,300 |
+| 64 | 187,500 | 186,000 | 199,900 | 212,000 |
 
 Latency, from sending a command to the last byte of its reply:
 
 | At 16 clients | p50 | p90 | p99 | p99.9 |
 | :-- | --: | --: | --: | --: |
-| SET, Postino | 88 µs | 122 µs | 178 µs | 273 µs |
-| SET, Redis | 87 µs | 111 µs | 136 µs | 219 µs |
-| GET, Postino | 82 µs | 108 µs | 158 µs | 219 µs |
-| GET, Redis | 76 µs | 98 µs | 121 µs | 167 µs |
+| SET, Postino | 85 µs | 127 µs | 188 µs | 287 µs |
+| SET, Redis | 84 µs | 110 µs | 149 µs | 197 µs |
+| GET, Postino | 77 µs | 120 µs | 185 µs | 237 µs |
+| GET, Redis | 77 µs | 104 µs | 141 µs | 182 µs |
 
 </details>
 
