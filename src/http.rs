@@ -394,9 +394,36 @@ fn has_control(text: &str) -> bool {
 }
 
 /// Parses a head that has arrived whole, as [`HeadScan`] measured it: the
-/// request without its body, and the length the body has.
+/// request without its body, and the length the body has. Leading blank
+/// lines are skipped, as [`read_request`] skips them.
 pub fn parse_head(head: &[u8], max_body: usize) -> Result<(Request, usize), ReadError> {
-    read_head(&mut &head[..], max_body, None)
+    if head.len() > MAX_HEAD {
+        return Err(ReadError::Status(431, "request head too large"));
+    }
+    let mut start = 0;
+    while let Some(at) = head[start..].iter().position(|&b| b == b'\n') {
+        if !trim_eol(&head[start..=start + at]).is_empty() {
+            break;
+        }
+        start += at + 1;
+    }
+    // A head is complete only once its blank line has arrived, as
+    // `read_head` requires: a client that stops partway has sent none.
+    let rest = &head[start..];
+    let Some(last) = rest.len().checked_sub(1) else {
+        return Err(ReadError::Closed);
+    };
+    if rest[last] != b'\n' {
+        return Err(ReadError::Closed);
+    }
+    let start_of_line = rest[..last]
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map_or(0, |at| at + 1);
+    if !trim_eol(&rest[start_of_line..]).is_empty() {
+        return Err(ReadError::Closed);
+    }
+    parse(rest.to_vec(), max_body)
 }
 
 pub fn percent_decode(input: &str, plus_as_space: bool) -> String {
@@ -1124,6 +1151,14 @@ mod tests {
             read_head(&mut &cut[..], 1 << 20, None),
             Err(ReadError::Closed)
         ));
+        assert!(matches!(parse_head(cut, 1 << 20), Err(ReadError::Closed)));
+        assert!(
+            matches!(
+                parse_head(b"GET / HTTP/1.1\r\nHost: h\r\n", 1 << 20),
+                Err(ReadError::Closed)
+            ),
+            "a head without its blank line has not ended"
+        );
         for _ in 0..20_000 {
             let mut head = Vec::new();
             // Often a request line that parses, so that whole heads do too.

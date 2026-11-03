@@ -30,7 +30,15 @@ use crate::store::{Effect, SnapshotOwned, SnapshotRef, Store};
 use crate::util::{now_ms, private_dir, private_file};
 
 const SNAPSHOT_VERSION: u32 = 1;
-const REWRITE_MIN_BYTES: u64 = 4 * 1024 * 1024;
+/// Never rewrite before the journal has grown this far, even when the last
+/// snapshot was small: rewriting a small keyspace every few megabytes writes
+/// the whole snapshot out again and again for little recovery time saved.
+/// Unit tests keep the old floor so they exercise the automatic trigger.
+const REWRITE_MIN_BYTES: u64 = if cfg!(test) {
+    4 * 1024 * 1024
+} else {
+    64 * 1024 * 1024
+};
 /// How long writes wait for a sync running in the background to end. Past
 /// it they go ahead, and wait behind the sync, rather than pile up. Tests
 /// wait less, to get past it.

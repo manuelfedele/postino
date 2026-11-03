@@ -121,6 +121,9 @@ pub struct Ctx {
     pub access: Access,
     pub max_keys: usize,
     pub max_elements: usize,
+    /// Whether the changed keys are recorded, for blocked requests and for
+    /// clients that listen to key changes. Nothing else needs them.
+    pub events: bool,
 }
 
 impl Ctx {
@@ -132,6 +135,7 @@ impl Ctx {
             access: Access::admin(),
             max_keys: usize::MAX,
             max_elements: usize::MAX,
+            events: true,
         }
     }
 }
@@ -341,6 +345,7 @@ pub const COMMANDS: &[&str] = &[
 ];
 
 /// Where a command names its keys, and whether it may change them.
+#[derive(Clone, Copy)]
 enum Keys {
     None,
     /// The first argument.
@@ -588,8 +593,28 @@ pub fn grows(argv: &[String]) -> bool {
 
 /// Whether a command may change the keyspace.
 pub fn writes(argv: &[String]) -> bool {
-    matches!(Name::of(argv).as_str(), "FLUSHALL" | "FLUSHDB")
-        || key_args(argv).is_some_and(|keys| keys.iter().any(|(_, write)| *write))
+    // The same walk over key specifications as [`key_args`], without
+    // collecting the keys: every change checks this.
+    let name = Name::of(argv);
+    if matches!(name.as_str(), "FLUSHALL" | "FLUSHDB") {
+        return true;
+    }
+    let Some(spec) = key_spec(name.as_str()) else {
+        return false;
+    };
+    let len = argv.len();
+    match spec {
+        Keys::None => false,
+        Keys::First(write) | Keys::All(write) => write && len > 1,
+        Keys::Pairs => len > 1,
+        Keys::Two => len > 1,
+        Keys::AllButLast => len > 2,
+        Keys::Streams(from, write) => {
+            let keys = stream_keys(argv, from);
+            write && keys.start < len && !keys.is_empty()
+        }
+        Keys::Second(write) => write && len > 2,
+    }
 }
 
 /// The stream keys of `[COUNT n] [BLOCK ms] [NOACK] STREAMS k1.. id1..`,
@@ -925,7 +950,9 @@ impl Exec<'_> {
 
     fn touch(&mut self, key: &str, event: &'static str) {
         self.dirty = true;
-        self.events.push((key.to_string(), event));
+        if self.ctx.events {
+            self.events.push((key.to_string(), event));
+        }
     }
 
     fn now(&self) -> u64 {
@@ -3583,6 +3610,7 @@ mod tests {
             access: Access::admin(),
             max_keys: 1000,
             max_elements: 1000,
+            events: true,
         }
     }
 
@@ -4316,6 +4344,24 @@ mod tests {
         assert!(grows(&argv("XGROUP CREATE s g $")));
         assert!(!grows(&argv("XGROUP DESTROY s g")));
         assert!(!grows(&argv("DEL a")));
+        // Whether a command writes without collecting its keys must agree
+        // with the keys it names.
+        for name in COMMANDS {
+            for len in 0..10 {
+                let mut words: Vec<String> = std::iter::once(name.to_string())
+                    .chain((1..len).map(|i| format!("a{i}")))
+                    .collect();
+                let expected = matches!(*name, "FLUSHALL" | "FLUSHDB")
+                    || key_args(&words).is_some_and(|keys| keys.iter().any(|(_, w)| *w));
+                assert_eq!(writes(&words), expected, "{words:?}");
+                // The stream walk reads its keys after STREAMS too.
+                words.push("STREAMS".into());
+                words.extend((0..3).map(|i| format!("b{i}")));
+                let expected = matches!(*name, "FLUSHALL" | "FLUSHDB")
+                    || key_args(&words).is_some_and(|keys| keys.iter().any(|(_, w)| *w));
+                assert_eq!(writes(&words), expected, "{words:?}");
+            }
+        }
     }
 
     #[test]

@@ -2371,7 +2371,8 @@ impl Core {
         if let Err(denied) = access.permit(argv) {
             return Outcome::of(Reply::Error(denied));
         }
-        if writes(argv) && self.halted {
+        let writing = writes(argv);
+        if writing && self.halted {
             return Outcome::of(Reply::Error(HALTED.into()));
         }
         if grows(argv)
@@ -2379,9 +2380,7 @@ impl Core {
         {
             return Outcome::of(Reply::Error(message));
         }
-        if writes(argv)
-            && let Some(why) = self.journal_failing()
-        {
+        if writing && let Some(why) = self.journal_failing() {
             return Outcome::of(Reply::Error(format!(
                 "IOERR the journal cannot be written ({why}); changes are refused until it can"
             )));
@@ -2409,6 +2408,15 @@ impl Core {
                     access: access.clone(),
                     max_keys: self.limits.max_keys,
                     max_elements: self.limits.max_elements,
+                    events: self
+                        .waiters
+                        .by_topic
+                        .keys()
+                        .any(|topic| matches!(topic, Topic::Key(_)))
+                        || self
+                            .channels
+                            .iter()
+                            .any(|s| s.keys && s.alive.strong_count() > 0),
                 };
                 let out = self.store.db.exec(argv, &ctx);
                 if out.dirty {
@@ -3244,7 +3252,8 @@ impl Broker {
     ) -> Result<Reply> {
         // Walks through the keyspace, sent alone, take the lock a run of keys
         // at a time: see [`Broker::in_runs`].
-        let walking = match Name::of(argv).as_str() {
+        let name = Name::of(argv);
+        let walking = match name.as_str() {
             "KEYS" => argv.len() == 2,
             "DBSIZE" => argv.len() == 1 && !access.scope.is_all(),
             "SCAN" | "INFO" => true,
@@ -3255,6 +3264,29 @@ impl Broker {
                 return Ok(Reply::Error(denied));
             }
             return Ok(self.walk(argv, access));
+        }
+        // The common read skips the machinery every command shares: nothing
+        // waits on it, nothing is journaled, and it reaches one key.
+        if argv.len() == 2 && name == "GET" {
+            if let Err(denied) = access.permit(argv) {
+                return Ok(Reply::Error(denied));
+            }
+            let mut core = self.lock();
+            let reply = match core.store.db.get(&argv[1], now_ms()).map(|e| &e.value) {
+                None => Reply::Nil,
+                Some(crate::db::Value::String(s)) => match within_reply(s.len() + 4) {
+                    Ok(()) => Reply::Bulk(s.clone()),
+                    Err(refused) => Reply::Error(refused),
+                },
+                Some(_) => Reply::Error(crate::db::WRONGTYPE.into()),
+            };
+            // A thread that does not batch, such as one serving a single
+            // connection, writes what others batched before it answers, as
+            // every command does. A loop writes them once for the round.
+            if !BATCHING.get() {
+                self.settle(&mut core);
+            }
+            return Ok(reply);
         }
         let out = self.run(|core, now| core.command(argv, access, true, now))?;
         let Some(block) = out.block else {
